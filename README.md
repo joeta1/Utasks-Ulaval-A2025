@@ -1,46 +1,41 @@
-# vue-starter
+# UTasks - Manage Your Tasks as you Want!
+UTasks is a Trello-like web application built with **Vue 3**, **TypeScript**, and **TailwindCSS**.  
+It allows users to create an account, log in, and manage their tasks by creating, editing, and organizing boards, lists, and cards through a clean and interactive interface.
+> Warning: In this first version, authentication is simplified: users only need to enter a username to be instantly redirected to their profile (no token handling yet).
 
-Kit de départ préconfiguré utilisant [create-vue](https://github.com/vuejs/create-vue/), [ESLint](https://eslint.org/) avec [Prettier](https://prettier.io/) et [Vitest](https://vitest.dev/).
+## Features
+- Create a user by entering a username (instant login for this version)
+- Create / Delete / Edit boards, lists, and cards
+- View all user boards, lists, and cards
+- Drag & drop cards between lists
+- Reordering lists
+- Filter cards by priority, date, or both
 
-## Prérequis
+## Technologies
+- [**Vue 3**](https://vuejs.org/) – framework for building interactive modern web apps  
+- [**TypeScript**](https://www.typescriptlang.org/) – typed superset of JavaScript  
+- [**TailwindCSS**](https://tailwindcss.com/) – utility-first CSS framework  
+- [**ESLint**](https://eslint.org/) – identifies and fixes code quality issues
 
-- Git [Windows](http://www.git-scm.com/book/en/Getting-Started-Installing-Git#Installing-on-Windows), [Mac](http://www.git-scm.com/book/en/Getting-Started-Installing-Git#Installing-on-Mac), [Linux](http://www.git-scm.com/book/en/Getting-Started-Installing-Git#Installing-on-Linux)
-- [Node.js](https://nodejs.org/en/) (version LTS recommandée)
+## Installation and Running on Local Server (On your IDE)
+- Step 1: clone the repository
+- Step 2:  enter the command `npm install` on your terminal
+- Step 3:  `npm run dev`
+- Step 4: The application will be running at `http://localhost:5173`
 
-Vérifier que Node est installé avec la commande:
+## Directives for using the app
+While this version is still under testing, please follow these notes:
 
-```bash
-node -v
-```
+On launch, you will be asked to create a username.
+To avoid API conflicts, use unique usernames like JordanEtaba15, JordanEtaba16, etc.
 
-Vérifier que Node est installé avec la commande:
+The Logout button temporarily deletes the user from the API database and returns you to the home page.
+This allows you to reuse the same username multiple times without errors.
 
-```bash
-npm -v
-```
+Note: The app already uses an public API provided at `https://utasks-026af75f15a3.herokuapp.com/`.
 
-## Installation
+You can also access to Documentation here: `https://utasks-026af75f15a3.herokuapp.com/docs/#/`
 
-```bash
-npm install
-```
 
-## Développement
-
-```bash
-npm run dev
-```
-
-## Livrable 1
-
-Faites vos modifications aux fichiers `Home.vue`, `Navigation.vue`, `Restaurant.vue` et `User.vue`. Ajoutez votre HTML dans la balise `<template>` et votre CSS dans la balise `<style>` de chacun des components. Vous pouvez également modifier la structure de fichiers si vous désirez.
-
-## Livrable 2-3
-
-Libre à vous de modifier la structure des fichiers.
-
-## Notes
-
-### ESLint
-
-ESLint est configuré afin de respecter un certain standard de code à travers votre équipe. Il est basé sur la configuration de Prettier. qui rassemble les règles de base populaires. Libre à vous de modifier cette configuration.
+## Contributors
+- Jordan Etaba Bikoun
