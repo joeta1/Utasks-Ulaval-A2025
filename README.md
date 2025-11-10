@@ -20,8 +20,9 @@ It allows users to create an account, log in, and manage their tasks by creating
 ## Installation and Running on Local Server (On your IDE)
 - Step 1: clone the repository
 - Step 2:  enter the command `npm install` on your terminal
-- Step 3:  `npm run dev`
-- Step 4: The application will be running at `http://localhost:5173`
+- Step 3: The application will be running at `http://localhost:5173`
+
+## Running on remote server (Testing on Phone, desktop, laptop...)
 
 ## Directives for using the app
 While this version is still under testing, please follow these notes:

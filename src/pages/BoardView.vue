@@ -1,28 +1,42 @@
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import BoardHeader from '../components/BoardHeader.vue'
+import NewListForm from '../components/NewListForm.vue'
+import CardItem from '../components/CardItem.vue'
+import ListColumn from '../components/ListColumn.vue'
 
+// API base and routing
 const apiBase = 'https://utasks-026af75f15a3.herokuapp.com'
 const route = useRoute()
 const router = useRouter()
 
+// Board ID from route
 const boardId = route.params.id as string
+// Auth check
 const userId = localStorage.getItem('userId')
 if (!userId) router.push('/')
 
+// State
 const boardName = ref('')
 const lists = ref<any[]>([])
 const newListName = ref('')
 const loading = ref(false)
 const editingBoard = ref(false)
 const editBoardName = ref('')
+
+// Drag state
 const draggedCard = ref<any>(null)
 const draggedList = ref<any>(null)
+const draggingListIndex = ref<number | null>(null)
+
+// Edit state
 const editingCard = ref<any>(null)
 const editingList = ref<any>(null)
+
+// UI state
 const sortBy = ref<'priority' | 'dueDate' | 'priorityAndDueDate' | 'none'>('none')
 const dragOverListId = ref<string | null>(null)
-const draggingListIndex = ref<number | null>(null)
 
 async function loadBoard() {
   loading.value = true
@@ -49,6 +63,8 @@ async function loadBoard() {
   }
 }
 
+// Sorting helper
+
 function getSortedCards(cards: any[]) {
   if (sortBy.value === 'none') return cards
 
@@ -61,10 +77,10 @@ function getSortedCards(cards: any[]) {
       return new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime()
     }
     else if (sortBy.value === 'priorityAndDueDate') {
-      // first sort by descending priority
+      // Priority first
       const priorityDiff = (b.priority || 1) - (a.priority || 1)
       if (priorityDiff !== 0) return priorityDiff
-      // then by ascending due date
+      // Then date
       if (!a.dueDate) return 1
       if (!b.dueDate) return -1
       return new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime()
@@ -73,6 +89,8 @@ function getSortedCards(cards: any[]) {
   })
 }
 
+// Board operations
+
 async function updateBoard() {
   const name = editBoardName.value.trim()
   if (!name) return
@@ -80,7 +98,7 @@ async function updateBoard() {
   try {
     const res = await fetch(`${apiBase}/api/boards/${boardId}`, {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json; charset=UTF-8' },
+      headers: { 'Content-Type': 'application/json; charset=utf-8' },
       body: JSON.stringify({ name })
     })
     if (!res.ok) throw new Error('Failed to update board')
@@ -114,7 +132,7 @@ async function createList() {
   try {
     const res = await fetch(`${apiBase}/api/lists`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json; charset=UTF-8' },
+      headers: { 'Content-Type': 'application/json; charset=utf-8' },
       body: JSON.stringify({ name, boardId })
     })
     if (!res.ok) throw new Error('Failed to create list')
@@ -134,7 +152,7 @@ async function updateList(listId: string, name: string) {
   try {
     const res = await fetch(`${apiBase}/api/lists/${listId}`, {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json; charset=UTF-8' },
+      headers: { 'Content-Type': 'application/json; charset=utf-8' },
       body: JSON.stringify({ name, boardId })
     })
     if (!res.ok) throw new Error('Failed to update list')
@@ -164,13 +182,15 @@ async function deleteList(listId: string) {
   }
 }
 
+// Card operations
+
 async function createCard(listId: string, title: string, description = '', dueDate?: string, priority = 2) {
   if (!title.trim()) return
 
   try {
     const res = await fetch(`${apiBase}/api/cards`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json; charset=UTF-8' },
+      headers: { 'Content-Type': 'application/json; charset=utf-8' },
       body: JSON.stringify({
         title,
         description,
@@ -199,7 +219,7 @@ async function updateCard(cardId: string, updates: any) {
   try {
     const res = await fetch(`${apiBase}/api/cards/${cardId}`, {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json; charset=UTF-8' },
+      headers: { 'Content-Type': 'application/json; charset=utf-8' },
       body: JSON.stringify(updates)
     })
     if (!res.ok) throw new Error('Failed to update card')
@@ -237,9 +257,8 @@ async function deleteCard(listId: string, cardId: string) {
   }
 }
 
-// Drag and Drop for Cards
+// Desktop drag & drop
 function onCardDragStart(e: DragEvent, card: any, listId: string) {
-  // Stop the event bubbling so parent list drag events don't fire when dragging a card
   e.stopPropagation()
   draggedList.value = null
   draggedCard.value = { card, sourceListId: listId }
@@ -250,7 +269,6 @@ function onCardDragStart(e: DragEvent, card: any, listId: string) {
 }
 
 function onCardDragOver(e: DragEvent, listId?: string) {
-  // Ignore this event if a list is currently being dragged
   if (draggedList.value) return
 
   e.preventDefault()
@@ -264,7 +282,6 @@ function onCardDragOver(e: DragEvent, listId?: string) {
 }
 
 async function onCardDrop(e: DragEvent, targetListId: string) {
-  // Ignore this event if a list is currently being dragged
   if (draggedList.value) return
 
   e.preventDefault()
@@ -277,10 +294,9 @@ async function onCardDrop(e: DragEvent, targetListId: string) {
   const { card, sourceListId } = draggedCard.value
 
   try {
-    // Always perform the API update even if dropping in the same list
     const res = await fetch(`${apiBase}/api/cards/${card.id}`, {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json; charset=UTF-8' },
+      headers: { 'Content-Type': 'application/json; charset=utf-8' },
       body: JSON.stringify({
         title: card.title,
         description: card.description,
@@ -293,7 +309,7 @@ async function onCardDrop(e: DragEvent, targetListId: string) {
 
     if (!res.ok) throw new Error('Failed to move card')
 
-    // Do not move visually if the card stays in the same list
+    // Skip visual update if same list
     if (sourceListId === targetListId) {
       draggedCard.value = null
       return
@@ -317,9 +333,8 @@ async function onCardDrop(e: DragEvent, targetListId: string) {
   }
 }
 
-// Drag and Drop for Lists
+// List drag handlers
 function onListDragStart(e: DragEvent, list: any, index: number) {
-  // Stop the event bubbling so board level drag events don't interfere when dragging a list
   e.stopPropagation()
   draggedCard.value = null
   draggedList.value = { list, index }
@@ -328,7 +343,7 @@ function onListDragStart(e: DragEvent, list: any, index: number) {
     e.dataTransfer.effectAllowed = 'move'
     e.dataTransfer.setData('type', 'list')
   }
-  // Use a clone of the entire list as the drag image rather than just the handle
+  // Clone list for drag image
   const listEl = (e.target as HTMLElement)?.closest('.list-item') as HTMLElement | null
   if (listEl && e.dataTransfer) {
     const clone = listEl.cloneNode(true) as HTMLElement
@@ -336,10 +351,8 @@ function onListDragStart(e: DragEvent, list: any, index: number) {
     clone.style.top = '-9999px'
     clone.style.left = '-9999px'
     clone.style.width = `${listEl.offsetWidth}px`
-   // clone.style.opacity = '0'
     document.body.appendChild(clone)
     e.dataTransfer.setDragImage(clone, clone.offsetWidth / 2, 24)
-    // Remove the clone immediately after the drag image has been captured
     setTimeout(() => document.body.removeChild(clone), 0)
   }
 }
@@ -349,30 +362,24 @@ function onListDragEnd(e: DragEvent) {
 }
 
 function onListDragOver(e: DragEvent) {
-  // Ignore this event if a card is currently being dragged
   if (draggedCard.value) return
 
   e.preventDefault()
-  // Stop propagation so only this drop zone handles the event
   e.stopPropagation()
   if (e.dataTransfer) {
     e.dataTransfer.dropEffect = 'move'
   }
 }
 
-// When leaving a card drop zone, only clear the dragOverListId if the mouse truly leaves the zone
 function onCardDragLeave(e: DragEvent) {
   const current = e.currentTarget as HTMLElement | null
   const related = (e as any).relatedTarget as HTMLElement | null
-  // If there is no related target or the related target is not a child of the current target,
-  // then the drag has left the entire drop zone and we should clear the highlight
   if (!current || !related || !current.contains(related)) {
     dragOverListId.value = null
   }
 }
 
 function onListDrop(e: DragEvent, targetIndex: number) {
-  // Ignore this event if a card is currently being dragged
   if (draggedCard.value) return
 
   e.preventDefault()
@@ -393,6 +400,201 @@ function onListDrop(e: DragEvent, targetIndex: number) {
 
   lists.value = newLists
   draggedList.value = null
+}
+
+// Touch drag state
+const touchDrag = ref<any>({ card: null, sourceListId: null, touchId: null, clientX: 0, clientY: 0, active: false })
+const touchListDrag = ref<any>({ list: null, sourceIndex: null, touchId: null, clientX: 0, clientY: 0, targetIndex: null, active: false })
+const touchListPressTimer = ref<number | null>(null)
+const touchListStartPos = ref<{ x: number; y: number } | null>(null)
+const touchCardPressTimer = ref<number | null>(null)
+const touchCardStartPos = ref<{ x: number; y: number } | null>(null)
+const LONG_PRESS_DELAY = 200
+
+function onCardTouchStart(e: TouchEvent, card: any, listId: string) {
+  e.stopPropagation()
+  const t = (e as TouchEvent).changedTouches[0]
+  touchCardStartPos.value = { x: t.clientX, y: t.clientY }
+
+  // Long-press timer
+  if (touchCardPressTimer.value) {
+    clearTimeout(touchCardPressTimer.value)
+    touchCardPressTimer.value = null
+  }
+  touchCardPressTimer.value = window.setTimeout(() => {
+    touchDrag.value = { card, sourceListId: listId, touchId: t.identifier, clientX: t.clientX, clientY: t.clientY, active: true }
+    touchCardPressTimer.value = null
+  }, LONG_PRESS_DELAY)
+}
+
+function onCardTouchMove(e: TouchEvent) {
+  const t = (e as TouchEvent).changedTouches[0]
+
+  // Cancel long-press if user moves
+  if (!touchDrag.value.active) {
+    const start = touchCardStartPos.value
+    if (start) {
+      const dx = Math.abs(t.clientX - start.x)
+      const dy = Math.abs(t.clientY - start.y)
+      if (dx > 10 || dy > 10) {
+        if (touchCardPressTimer.value) {
+          clearTimeout(touchCardPressTimer.value)
+          touchCardPressTimer.value = null
+        }
+        touchCardStartPos.value = null
+      }
+    }
+    return
+  }
+
+  // Update preview position
+  touchDrag.value.clientX = t.clientX
+  touchDrag.value.clientY = t.clientY
+  const el = document.elementFromPoint(t.clientX, t.clientY) as HTMLElement | null
+  const listEl = el?.closest('[data-list-id]') as HTMLElement | null
+  dragOverListId.value = listEl?.getAttribute('data-list-id') ?? null
+  e.preventDefault()
+}
+
+async function onCardTouchEnd(e: TouchEvent) {
+  // Clear timer if tap
+  if (touchCardPressTimer.value) {
+    clearTimeout(touchCardPressTimer.value)
+    touchCardPressTimer.value = null
+    touchCardStartPos.value = null
+    return
+  }
+
+  if (!touchDrag.value.active) return
+  const { card, sourceListId } = touchDrag.value
+  const targetListId = dragOverListId.value ?? sourceListId
+
+  // reset drag state
+  touchDrag.value = { card: null, sourceListId: null, touchId: null, clientX: 0, clientY: 0, active: false }
+  dragOverListId.value = null
+
+  if (!card || !targetListId) return
+  if (targetListId === sourceListId) return
+
+  try {
+    const res = await fetch(`${apiBase}/api/cards/${card.id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json; charset=utf-8' },
+      body: JSON.stringify({
+        title: card.title,
+        description: card.description,
+        dueDate: card.dueDate,
+        priority: card.priority,
+        isCompleted: card.isCompleted,
+        listId: targetListId
+      })
+    })
+    if (!res.ok) throw new Error('Failed to move card')
+
+    const sourceList = lists.value.find((l: any) => l.id === sourceListId)
+    const targetList = lists.value.find((l: any) => l.id === targetListId)
+
+    if (sourceList && targetList) {
+      const cardIndex = sourceList.cards.findIndex((c: any) => c.id === card.id)
+      if (cardIndex !== -1) {
+        sourceList.cards.splice(cardIndex, 1)
+        targetList.cards.push({ ...card, listId: targetListId })
+      }
+    }
+  } catch (err) {
+    console.error(err)
+    alert('Failed to move card')
+  }
+}
+
+function onCardTouchCancel(_e: TouchEvent) {
+  if (touchCardPressTimer.value) {
+    clearTimeout(touchCardPressTimer.value)
+    touchCardPressTimer.value = null
+  }
+  touchCardStartPos.value = null
+  touchDrag.value = { card: null, sourceListId: null, touchId: null, active: false }
+  dragOverListId.value = null
+}
+
+// List touch handlers
+function onListTouchStart(e: TouchEvent, list: any, index: number) {
+  e.stopPropagation()
+  const t = (e as TouchEvent).changedTouches[0]
+  touchListStartPos.value = { x: t.clientX, y: t.clientY }
+
+  if (touchListPressTimer.value) {
+    clearTimeout(touchListPressTimer.value)
+    touchListPressTimer.value = null
+  }
+  touchListPressTimer.value = window.setTimeout(() => {
+    touchListDrag.value = { list, sourceIndex: index, touchId: t.identifier, clientX: t.clientX, clientY: t.clientY, targetIndex: index, active: true }
+    touchListPressTimer.value = null
+  }, LONG_PRESS_DELAY)
+}
+
+function onListTouchMove(e: TouchEvent) {
+  const t = (e as TouchEvent).changedTouches[0]
+  // Cancel on movement if not active
+  if (!touchListDrag.value.active) {
+    const start = touchListStartPos.value
+    if (start) {
+      const dx = Math.abs(t.clientX - start.x)
+      const dy = Math.abs(t.clientY - start.y)
+      if (dx > 10 || dy > 10) {
+        if (touchListPressTimer.value) {
+          clearTimeout(touchListPressTimer.value)
+          touchListPressTimer.value = null
+        }
+        touchListStartPos.value = null
+      }
+    }
+    return
+  }
+
+  // Update position and target
+  touchListDrag.value.clientX = t.clientX
+  touchListDrag.value.clientY = t.clientY
+  const el = document.elementFromPoint(t.clientX, t.clientY) as HTMLElement | null
+  const listEl = el?.closest('[data-list-index]') as HTMLElement | null
+  const idx = listEl ? Number(listEl.getAttribute('data-list-index')) : null
+  touchListDrag.value.targetIndex = (idx === null || isNaN(idx)) ? touchListDrag.value.targetIndex : idx
+
+  e.preventDefault()
+}
+
+function onListTouchEnd(e: TouchEvent) {
+  // Clear timer if tap
+  if (touchListPressTimer.value) {
+    clearTimeout(touchListPressTimer.value)
+    touchListPressTimer.value = null
+    touchListStartPos.value = null
+    return
+  }
+
+  if (!touchListDrag.value.active) return
+  const { sourceIndex, targetIndex } = touchListDrag.value
+
+  // Reset state
+  touchListDrag.value = { list: null, sourceIndex: null, touchId: null, clientX: 0, clientY: 0, targetIndex: null, active: false }
+  touchListStartPos.value = null
+
+  if (sourceIndex == null || targetIndex == null) return
+  if (sourceIndex === targetIndex) return
+
+  const newLists = [...lists.value]
+  const [removed] = newLists.splice(sourceIndex, 1)
+  newLists.splice(targetIndex, 0, removed)
+  lists.value = newLists
+}
+
+function onListTouchCancel(_e: TouchEvent) {
+  if (touchListPressTimer.value) {
+    clearTimeout(touchListPressTimer.value)
+    touchListPressTimer.value = null
+  }
+  touchListStartPos.value = null
+  touchListDrag.value = { list: null, sourceIndex: null, touchId: null, clientX: 0, clientY: 0, targetIndex: null, active: false }
 }
 
 function getPriorityColor(priority: number) {
@@ -418,319 +620,127 @@ function isOverdue(dueDate: string) {
 }
 
 onMounted(loadBoard)
+
+// Component wrappers
+function startEditBoard() {
+  editingBoard.value = true
+  editBoardName.value = boardName.value
+}
+
+function cancelEditBoard() {
+  editingBoard.value = false
+}
+
+function saveBoardName(name: string) {
+  editBoardName.value = name
+  updateBoard()
+}
+
+function setSortBy(val: any) {
+  sortBy.value = val
+}
+
+function handleCreateList(name: string) {
+  newListName.value = name
+  createList()
+}
+
+function startEditCard(card: any) {
+  editingCard.value = { ...card }
+}
+
+function cancelEditCard() {
+  editingCard.value = null
+}
+
+function startEditList(list: any) {
+  editingList.value = { id: list.id, name: list.name }
+}
+
+function cancelEditList() {
+  editingList.value = null
+}
 </script>
 
 <template>
   <!-- Top‑level container for the board view page -->
   <div
-    class="min-h-screen bg-linear-to-br from-indigo-50 via-white to-purple-50 dark:from-slate-900 dark:via-slate-800 dark:to-slate-900 p-4 md:p-6">
-    <!-- Header section with board title, editing form and action buttons -->
-    <header class="max-w-7xl mx-auto mb-6">
-      <div
-        class="bg-white/80 dark:bg-slate-800/80 backdrop-blur-lg rounded-2xl shadow-xl p-4 md:p-6 border border-gray-200 dark:border-slate-700">
-        <!-- Row 1 : board title and actions -->
-        <div class="flex flex-col lg:flex-row justify-between gap-4">
-          <!-- Title and inline edit form -->
-          <div class="flex-1 min-w-0">
-            <div v-if="!editingBoard" class="flex items-center gap-3">
-              <h1 class=" text-2xl md:text-3xl font-bold text-slate-900 dark:text-slate-100 truncate break-all">
-                {{ boardName }}
-              </h1>
-              <button id="edit-board-button" @click="editingBoard = true; editBoardName = boardName"
-                class="p-2 hover:bg-gray-100 dark:hover:bg-slate-700 rounded-lg transition" title="Edit board name">
-                <svg class="w-4 h-4 text-gray-600 dark:text-gray-400" fill="none" stroke="currentColor"
-                  viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                    d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                </svg>
-              </button>
-            </div>
-
-            <form v-else @submit.prevent="updateBoard" class="mt-1 flex gap-2">
-              <input id="edit-board-name" v-model="editBoardName" type="text"
-                class="flex-1 px-3 py-2 border rounded-lg dark:bg-slate-700 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                autofocus />
-              <button id="save-edit-board-button" type="submit"
-                class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition">
-                Save
-              </button>
-              <button id="cancel-edit-board-button" type="button" @click="editingBoard = false"
-                class="px-4 py-2 bg-gray-300 dark:bg-slate-600 rounded-lg hover:bg-gray-400 dark:hover:bg-slate-500 transition">
-                Cancel
-              </button>
-            </form>
-          </div>
-
-          <!-- Actions (right side) -->
-          <div class="flex flex-wrap items-center gap-2 shrink-0 justify-end">
-            <button id="delete-board-button" @click="deleteBoard"
-              class="p-2 bg-red-500 hover:bg-red-600 text-white rounded-lg transition" title="Delete board">
-              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                  d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-              </svg>
-            </button>
-
-            <button id="back-to-boards-button" @click="router.push('/boards')"
-              class="px-4 py-2  text-white bg-blue-700 hover:bg-blue-600 dark:bg-blue-700 dark:hover:bg-blue-600 rounded-lg text-sm font-medium transition">
-              ← Back
-            </button>
-          </div>
-        </div>
-
-        <!-- Row 2 : sorting controls (full width on mobile, inline on desktop) -->
-        <div class="mt-4 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
-          <div class="flex items-center gap-3">
-            <span class="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide">
-              Sort by
-            </span>
-
-            <!-- Segmented control -->
-            <div class="flex items-center overflow-hidden rounded-lg bg-blue-600 dark:bg-blue-700 p-1">
-              <button id="sort-priority-button" @click="sortBy = 'none'" :class="[
-                'px-3 py-1.5 text-sm font-medium rounded-md transition',
-                sortBy === 'none' ? 'bg-white dark:bg-slate-600 shadow' : 'text-slate-900 dark:text-slate-200'
-              ]" :aria-pressed="sortBy === 'none'">
-                Default
-              </button>
-              <button id="sort-priority-button" @click="sortBy = 'priority'" :class="[
-                'px-3 py-1.5 text-sm font-medium rounded-md transition',
-                sortBy === 'priority' ? 'bg-white dark:bg-slate-600 shadow' : 'text-slate-900 dark:text-slate-200'
-              ]" :aria-pressed="sortBy === 'priority'">
-                Priority
-              </button>
-              <button id="sort-due-date-button" @click="sortBy = 'dueDate'" :class="[
-                'px-3 py-1.5 text-sm font-medium rounded-md transition',
-                sortBy === 'dueDate' ? 'bg-white dark:bg-slate-600 shadow' : 'text-slate-900 dark:text-slate-200'
-              ]" :aria-pressed="sortBy === 'dueDate'">
-                Due Date
-              </button>
-              <button id="Priority+Date-button" @click="sortBy = 'priorityAndDueDate'" :class="[
-                'px-3 py-1.5 text-sm font-medium rounded-md transition',
-                sortBy === 'priorityAndDueDate' ? 'bg-white dark:bg-slate-600 shadow' : 'text-slate-900 dark:text-slate-200'
-              ]">
-                Priority + Date
-              </button>
-            </div>
-          </div>
-
-          <!-- Optional empty space for additional controls (e.g. search field or tags) -->
-          <div class="hidden md:block text-xs text-slate-400 dark:text-slate-500">
-            <!-- Placeholder if you want to add a search field or tags later -->
-          </div>
-        </div>
-      </div>
-    </header>
+    class="min-h-screen bg-linear-to-br from-blue-50 via-white to-blue-50 dark:from-slate-900 dark:via-slate-800 dark:to-slate-900 p-4 md:p-6">
+    <!-- Back button: placed above the board name (responsive) -->
+    <!-- SECTION: Back button — find by id="#back-to-boards-button" (top-left, small screens show icon only) -->
+    <div class="max-w-7xl mx-auto mb-4">
+      <button id="back-to-boards-button" @click="router.push('/boards')"
+        class="px-2 py-1 sm:px-3 sm:py-2 text-xs sm:text-sm text-white bg-blue-600 hover:bg-blue-700 dark:bg-blue-600 dark:hover:bg-blue-700 rounded-lg font-medium shadow-md transition"
+        aria-label="Back to boards">
+        <span class="hidden sm:inline">← Back to Boards</span>
+        <span class="sm:hidden">←</span>
+      </button>
+    </div>
+    <!-- Header section extracted into a component -->
+    <BoardHeader :boardName="boardName" :editingBoard="editingBoard" :currentEditName="editBoardName" :sortBy="sortBy"
+      :onStartEdit="startEditBoard" :onSave="saveBoardName" :onCancel="cancelEditBoard" :onDelete="deleteBoard"
+      :onSetSortBy="setSortBy" />
 
     <main class="max-w-7xl mx-auto">
       <div v-if="loading" class="text-center text-slate-500 py-12">
-        <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 mx-auto"></div>
+        <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto"></div>
         <p class="mt-4">Loading board...</p>
       </div>
 
       <div class="mb-6">
-        <!-- Form to add a new list to the current board -->
-        <div
-          class="bg-white/80 dark:bg-slate-800/80 backdrop-blur-lg rounded-xl p-4 shadow-lg border border-gray-200 dark:border-slate-700">
-          <form @submit.prevent="createList" class="flex gap-2">
-            <input id="new-list-name" v-model="newListName" type="text" placeholder="+ Add a new list..."
-              class="flex-1 px-4 py-2.5 border border-gray-300 dark:border-slate-600 rounded-lg dark:bg-slate-700 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition" />
-            <button id="add-list-button" type="submit"
-              class="px-6 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed font-medium shadow-lg transition transform hover:scale-105"
-              :disabled="!newListName.trim()">
-              Add List
-            </button>
-          </form>
-        </div>
+        <!-- New list form extracted into a component -->
+        <NewListForm :onCreate="handleCreateList" />
       </div>
 
-      <div class="flex gap-4 overflow-x-auto pb-6 px-1">
-        <!-- Draggable lists container -->
-        <div v-for="(list, index) in lists" :key="list.id" @dragover="onListDragOver" @drop="onListDrop($event, index)"
-          class=" list-item bg-gray-50 dark:bg-slate-800 rounded-xl p-4 w-103 shrink-0 shadow-lg border border-gray-200 dark:border-slate-700 hover:shadow-xl transition-shadow">
-          <!-- List header with title, card count and list actions -->
-          <div class="flex items-center justify-between mb-4">
-            <div v-if="editingList?.id === list.id" class="flex-1 flex gap-2 min-w-0">
-              <input id="edit-list-title" v-model="editingList.name" type="text" class="flex-1 min-w-0 px-2 py-1 text-sm border rounded dark:bg-slate-700 dark:text-slate-100 
-         focus:outline-none focus:ring-2 focus:ring-blue-500 truncate"
-                @keyup.enter="updateList(list.id, editingList.name)" autofocus />
-              <button id="save-edit-list-button" @click="updateList(list.id, editingList.name)"
-                class="p-1 text-green-600 hover:bg-green-50 dark:hover:bg-green-900/30 rounded" title="Save changes">
-                <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none" viewBox="0 0 24 24"
-                  stroke="currentColor" stroke-width="2">
-                  <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
-                </svg>
-              </button>
-              <button id="cancel-edit-list-button" @click="editingList = null"
-                class="p-1 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/30 rounded">
-                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
-            <div v-else class="flex items-center gap-2 flex-1 min-w-0">
-              <button id="move-list-button" draggable="true" @dragstart="onListDragStart($event, list, index)"
-                @dragend="onListDragEnd"
-                class="p-1 text-gray-400 hover:text-indigo-600 cursor-grab active:cursor-grabbing transition"
-                title="Move list">
-                <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24" fill="none"
-                  stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <!-- Vertical Axis -->
-                  <path d="M12 3v18" />
-                  <path d="M12 3l-3 3" />
-                  <path d="M12 3l3 3" />
-                  <path d="M12 21l-3-3" />
-                  <path d="M12 21l3-3" />
-                  <!-- Horizontal Axis -->
-                  <path d="M3 12h18" />
-                  <path d="M3 12l3-3" />
-                  <path d="M3 12l3 3" />
-                  <path d="M21 12l-3-3" />
-                  <path d="M21 12l-3 3" />
-                </svg>
-              </button>
-              <h2 class="font-semibold text-lg text-slate-900 dark:text-slate-100 flex-1 truncate">
-                {{ list.name }}
-              </h2>
-              <span
-                class="text-xs bg-blue-100 dark:bg-blue-900/50 text-blue-700 dark:text-blue-300 px-2 py-1 rounded-full font-medium">
-                {{ list.cards.length }}
-              </span>
-              <button id="edit-list-button" @click="editingList = { id: list.id, name: list.name }"
-                class="p-1 hover:bg-gray-200 dark:hover:bg-slate-700 rounded">
-                <svg class="w-4 h-4 text-gray-600 dark:text-gray-400" fill="none" stroke="currentColor"
-                  viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                    d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                </svg>
-              </button>
-              <button id="delete-list-button" @click="deleteList(list.id)"
-                class="p-1 hover:bg-red-100 dark:hover:bg-red-900/30 rounded text-red-600">
-                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                    d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                </svg>
-              </button>
-            </div>
-          </div>
+      <div class="flex flex-wrap gap-4 pb-6 px-1">
+        <!-- Draggable lists container (now wrapping) -->
+        <!-- SECTION: Lists container — lists will wrap to the next row when horizontal space runs out; each list element has data-list-id and data-list-index -->
+        <ListColumn v-for="(list, index) in lists" :key="list.id" :list="list" :index="index" :editingList="editingList"
+          :editingCard="editingCard" :touchListDrag="touchListDrag" :onListDragStart="onListDragStart"
+          :onListDragEnd="onListDragEnd" :onListDragOver="onListDragOver" :onListDrop="onListDrop"
+          :onListTouchStart="onListTouchStart" :onListTouchMove="onListTouchMove" :onListTouchEnd="onListTouchEnd"
+          :onListTouchCancel="onListTouchCancel" :onCardDragOver="onCardDragOver" :onCardDrop="onCardDrop"
+          :onCardDragLeave="onCardDragLeave" :createCard="createCard" :updateList="updateList" :deleteList="deleteList"
+          :startEditCard="startEditCard" :cancelEditCard="cancelEditCard" :updateCard="updateCard"
+          :deleteCard="deleteCard" :onCardDragStart="onCardDragStart" :onCardTouchStart="onCardTouchStart"
+          :onCardTouchMove="onCardTouchMove" :onCardTouchEnd="onCardTouchEnd" :onCardTouchCancel="onCardTouchCancel"
+          :onStartEditList="startEditList" :onCancelEditList="cancelEditList" :getSortedCards="getSortedCards"
+          :getPriorityColor="getPriorityColor" :getPriorityLabel="getPriorityLabel" :formatDate="formatDate"
+          :isOverdue="isOverdue" />
 
-          <!-- Form to add a new card to this list -->
-          <form @submit.prevent="createCard(list.id, list._newTitle, list._newDesc, list._newDue, list._newPriority)"
-            class="space-y-2 mb-4 p-3 rounded-lg bg-white dark:bg-slate-700/50 border border-gray-200 dark:border-slate-600 shadow-sm">
-            <input id="new-card-title" v-model="list._newTitle" placeholder="Card title"
-              class="w-full text-sm px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg dark:bg-slate-700 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500 transition" />
-            <textarea id="new-card-description" v-model="list._newDesc" placeholder="Description (optional)" rows="2"
-              class="w-full text-sm px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg dark:bg-slate-700 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none transition"></textarea>
-            <div class="flex gap-2 items-stretch">
-              <input id="new-card-due-date" v-model="list._newDue" type="date"
-                class="flex-1 text-sm px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg dark:bg-slate-700 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500" />
-              <select id="new-card-priority" v-model.number="list._newPriority"
-                class="text-sm px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg dark:bg-slate-700 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500">
-                <option :value="1">🟢 Low</option>
-                <option :value="2">🟡 Medium</option>
-                <option :value="3">🔴 High</option>
-              </select>
-              <button id="add-card-button" type="submit"
-                class="px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium transition transform hover:scale-105">
-                + Add
-              </button>
-            </div>
-          </form>
-
-          <!-- Cards container supporting drag‑and‑drop for cards -->
-          <div class="space-y-2 min-h-[100px]" :class="{ 'drag-over': dragOverListId === list.id }"
-            @dragover.prevent="onCardDragOver($event, list.id)" @drop.stop.prevent="onCardDrop($event, list.id)"
-            @dragleave="onCardDragLeave($event)">
-            <div v-for="card in getSortedCards(list.cards)" :key="card.id" :draggable="true"
-              @dragstart="onCardDragStart($event, card, list.id)" class="group relative">
-              <!-- Card edit form -->
-              <div v-if="editingCard?.id === card.id"
-                class="p-3 rounded-lg bg-white dark:bg-slate-700 border-2 border-blue-500 shadow-lg">
-                <input id="edit-card-title" v-model="editingCard.title" type="text"
-                  class="w-full px-2 py-1 mb-2 text-sm border rounded dark:bg-slate-600 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                <textarea id="edit-card-description" v-model="editingCard.description" rows="2"
-                  class="w-full px-2 py-1 mb-2 text-sm border rounded dark:bg-slate-600 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"></textarea>
-                <div class="flex gap-2 mb-2">
-                  <input id="edit-card-due-date" v-model="editingCard.dueDate" type="date"
-                    class="flex-1 text-xs px-2 py-1 border rounded dark:bg-slate-600 dark:text-slate-100 focus:outline-none" />
-                  <select id="edit-card-priority" v-model.number="editingCard.priority"
-                    class="text-xs px-2 py-1 border rounded dark:bg-slate-600 dark:text-slate-100 focus:outline-none">
-                    <option :value="1">Low</option>
-                    <option :value="2">Medium</option>
-                    <option :value="3">High</option>
-                  </select>
-                </div>
-                <div class="flex gap-2">
-                  <button id="save-card-button" @click="updateCard(card.id, editingCard)"
-                    class="flex-1 px-3 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm transition">
-                    Save
-                  </button>
-                  <button @click="editingCard = null"
-                    class="flex-1 px-3 py-1.5 bg-gray-300 dark:bg-slate-600 rounded-lg hover:bg-gray-400 dark:hover:bg-slate-500 text-sm transition">
-                    Cancel
-                  </button>
-                </div>
-              </div>
-
-              <!-- Display of a single card with title, description, priority and due date -->
-              <div v-else :class="getPriorityColor(card.priority || 1)"
-                class="p-3 rounded-lg border-2 shadow-md hover:shadow-xl cursor-move transition-all transform hover:-translate-y-1">
-                <div class="flex items-start justify-between gap-2 mb-2">
-                  <p class="text-sm font-medium text-slate-800 dark:text-slate-100 flex-1">{{ card.title }}</p>
-                  <div class="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <button id="edit-card=bton" @click="editingCard = { ...card }"
-                      class="p-1 hover:bg-indigo-100 dark:hover:bg-indigo-900/30 rounded text-blue-600"
-                      title="Edit card">
-                      <svg class="w-4 h-4 text-gray-600 dark:text-gray-400" fill="none" stroke="currentColor"
-                  viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                    d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                </svg>
-                    </button>
-                    <button id="delete-card-button" @click="deleteCard(list.id, card.id)"
-                      class="p-1 hover:bg-red-100 dark:hover:bg-red-900/30 rounded text-red-600">
-                      <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                          d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                      </svg>
-                    </button>
-                  </div>
-                </div>
-
-                <p v-if="card.description" class="text-xs text-slate-600 dark:text-slate-400 mb-2 line-clamp-2">
-                  {{ card.description }}
-                </p>
-
-                <div class="flex items-center justify-between gap-2 mt-2">
-                  <span class="text-xs font-semibold px-2 py-1 rounded-full" :class="{
-                    'bg-red-500 text-white': card.priority === 3,
-                    'bg-yellow-500 text-white': card.priority === 2,
-                    'bg-green-500 text-white': card.priority === 1
-                  }">
-                    {{ getPriorityLabel(card.priority || 1) }}
-                  </span>
-
-                  <span v-if="card.dueDate" class="text-xs px-2 py-1 rounded-full flex items-center gap-1"
-                    :class="isOverdue(card.dueDate) ? 'bg-red-500 text-white' : 'bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300'">
-                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                        d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                    </svg>
-                    {{ formatDate(card.dueDate) }}
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            <div v-if="list.cards.length === 0" class="text-center py-8 text-slate-400 text-sm">
-              No cards yet
-            </div>
-          </div>
-        </div>
-
-        <div class="w-80 shrink-0"></div>
+        <!-- spacer removed: lists now wrap; no horizontal spacer needed -->
       </div>
     </main>
+  </div>
+  <!-- Floating preview for touch-based drag (follows the finger) -->
+  <div v-if="touchDrag.active && touchDrag.card" class="pointer-events-none fixed z-50"
+    :style="{ left: touchDrag.clientX + 'px', top: touchDrag.clientY + 'px', transform: 'translate(-50%, -50%)' }">
+    <div
+      class="w-72 sm:w-80 md:w-96 p-3 rounded-lg border-2 shadow-2xl bg-white dark:bg-slate-700 opacity-95 transform transition-transform duration-75">
+      <div class="text-sm font-medium text-slate-800 dark:text-slate-100 truncate">{{ touchDrag.card.title }}</div>
+      <p v-if="touchDrag.card.description" class="text-xs text-slate-600 dark:text-slate-400 mt-1 line-clamp-2">{{
+        touchDrag.card.description }}</p>
+      <div class="flex items-center justify-between mt-2">
+        <span class="text-xs font-semibold px-2 py-1 rounded-full whitespace-nowrap shrink-0" :class="{
+          'bg-red-500 text-white': touchDrag.card.priority === 3,
+          'bg-yellow-500 text-white': touchDrag.card.priority === 2,
+          'bg-green-500 text-white': touchDrag.card.priority === 1
+        }">{{ getPriorityLabel(touchDrag.card.priority || 1) }}</span>
+        <span v-if="touchDrag.card.dueDate"
+          class="text-xs px-2 py-1 rounded-full text-slate-700 bg-blue-100 dark:bg-blue-900/50 dark:text-blue-300">{{
+            formatDate(touchDrag.card.dueDate) }}</span>
+      </div>
+    </div>
+  </div>
+  <!-- Floating preview for list touch-drag -->
+  <div v-if="touchListDrag.active && touchListDrag.list" class="pointer-events-none fixed z-40"
+    :style="{ left: touchListDrag.clientX + 'px', top: touchListDrag.clientY + 'px', transform: 'translate(-50%, -50%)' }">
+    <div
+      class="w-56 p-3 rounded-lg border shadow-2xl bg-white dark:bg-slate-800 opacity-95 transform transition-transform duration-75">
+      <div class="text-sm font-semibold text-slate-800 dark:text-slate-100 truncate">{{ touchListDrag.list.name }}</div>
+      <div class="text-xs text-slate-500 dark:text-slate-400 mt-1">{{ touchListDrag.list.cards?.length ?? 0 }} cards
+      </div>
+    </div>
   </div>
 </template>
 
@@ -756,6 +766,13 @@ onMounted(loadBoard)
 .drag-over {
   background-color: rgba(99, 102, 241, 0.1);
   border: 2px dashed #6366f1;
+}
+
+.drag-over-list {
+  transform: translateY(-6px);
+  box-shadow: 0 8px 30px rgba(15, 23, 42, 0.15);
+  border: 2px dashed rgba(99, 102, 241, 0.7);
+  background-color: rgba(99, 102, 241, 0.06);
 }
 
 .list-item {

@@ -32,7 +32,7 @@ const items = [
         href="https://github.com/GLO3102/utasks-a2025-utasks-a2025-team-37"
         target="_blank"
         rel="noopener"
-        class="inline-flex items-center gap-2 text-slate-500 dark:text-slate-200 hover:text-indigo-500 dark:hover:text-indigo-400 transition"
+        class="inline-flex items-center gap-2 text-slate-500 dark:text-slate-200 hover:text-blue-500 dark:hover:text-blue-400 transition"
         aria-label="GitHub"
       >
         <!-- GitHub Icon -->

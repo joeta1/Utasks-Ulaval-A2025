@@ -5,11 +5,9 @@ import { useRouter } from 'vue-router'
 const apiBase = 'https://utasks-026af75f15a3.herokuapp.com'
 const router = useRouter()
 
-// Reactive state for the username input and the loading indicator
 const newUserName = ref('')
 const loading = ref(false)
 
-// Create a new user on the backend and redirect to /boards
 async function createUser() {
   const name = newUserName.value.trim()
   if (!name) return
@@ -18,27 +16,24 @@ async function createUser() {
   try {
     const res = await fetch(`${apiBase}/api/users/register`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json; charset=UTF-8' },
+      headers: { 'Content-Type': 'application/json; charset=utf-8' },
       body: JSON.stringify({ username: name })
     })
     const json = await res.json()
-   if (!res.ok || !json.success) {
-  // Searching first in the "errors" array
-  const message =
-    json.errors?.[0]?.message ||  // case 500
-    json.error ||                 // case 400 / 409
-    json.message ||               // sometimes the server provides a simple message
-    'Unknown error'               // fallback
+    if (!res.ok || !json.success) {
+      const message =
+        json.errors?.[0]?.message ||
+        json.error ||
+        json.message ||
+        'Unknown error'
       throw new Error(message)
     }
 
     const user = json.data
 
-    // Save the user ID and username to localStorage
     localStorage.setItem('userId', user.id)
     localStorage.setItem('userName', user.username)
 
-    // Redirect immediately to the boards page
     router.push('/boards')
   } catch (err) {
     alert(err.message)
@@ -54,8 +49,7 @@ async function createUser() {
     class="min-h-screen flex items-center justify-center bg-linear-to-br from-gray-50 via-gray-100 to-white dark:from-black dark:via-gray-900 dark:to-black p-4 md:p-6">
     <div class="max-w-lg w-full text-center">
       <!-- Icon/branding container -->
-      <div
-        class="inline-flex items-center justify-center w-20 h-20 bg-blue-500 rounded-2xl shadow-2xl mb-6">
+      <div class="inline-flex items-center justify-center w-20 h-20 bg-blue-500 rounded-2xl shadow-2xl mb-6">
         <svg class="w-12 h-12 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
             d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
@@ -73,23 +67,15 @@ async function createUser() {
       <!-- Registration form with username input and submit button -->
       <form @submit.prevent="createUser" class="flex flex-col sm:flex-row gap-3 justify-center">
         <div class="flex-1 relative max-w-sm">
-          <!-- Username input field -->
-          <input
-            id="username"
-            autocomplete="username"
-            v-model="newUserName"
-            type="text"
+          <label for="username" class="sr-only">Username</label>
+          <input id="username" autocomplete="username" v-model="newUserName" type="text"
             placeholder="Enter your username..."
-            class="w-full pl-4 pr-4 py-3 border border-gray-300 dark:border-slate-600 rounded-xl dark:bg-slate-700 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-          />
+            class="w-full pl-4 pr-4 py-3 border border-gray-300 dark:border-slate-600 rounded-xl dark:bg-slate-700 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500" />
         </div>
         <!-- Submit button to create the user -->
-        <button
-          id="submit-create-user"
-          type="submit"
+        <button id="submit-create-user" type="submit"
           class="px-6 py-3 bg-green-600 hover:bg-green-700 text-white rounded-xl font-medium shadow-lg transition transform hover:scale-105 w-full sm:w-auto"
-          :disabled="!newUserName.trim() || loading"
-        >
+          :disabled="!newUserName.trim() || loading">
           Create
         </button>
       </form>
