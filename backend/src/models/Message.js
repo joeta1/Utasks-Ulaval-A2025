@@ -22,7 +22,7 @@ const messageSchema = new mongoose.Schema({
   },
   room: {
     type: String,
-    default: 'general' // 'general' ou ID de conversation privée
+    default: null // null or ID of private conversation. General chat disabled.
   },
   createdAt: {
     type: Date,

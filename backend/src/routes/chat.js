@@ -8,6 +8,10 @@ const { getConnectedUsers } = require('../socket');
 router.get('/messages/:room', auth, async (req, res) => {
   try {
     const { room } = req.params;
+    // Désactiver l'accès au chat général
+    if (room === 'general') {
+      return res.status(403).json({ success: false, error: 'General chat is disabled' });
+    }
     const { limit = 50, before } = req.query;
 
     const query = { room };

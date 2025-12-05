@@ -74,6 +74,20 @@ router.get('/:id', async (req, res) => {
   }
 });
 
+// GET /api/users - Get list of all users (auth required)
+router.get('/', authMiddleware, async (req, res) => {
+  try {
+    const users = await User.find({}, { username: 1 }).sort({ username: 1 }).lean();
+    res.json({
+      success: true,
+      data: users.map(u => ({ id: u._id.toString(), username: u.username }))
+    });
+  } catch (error) {
+    console.error('Error fetching users list:', error);
+    res.status(500).json({ success: false, error: 'Failed to fetch users' });
+  }
+});
+
 // DELETE /api/users/:id - Delete user by ID
 router.delete('/:id', authMiddleware, async (req, res) => {
   try {

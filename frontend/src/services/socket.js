@@ -52,15 +52,7 @@ class SocketService {
     return this.socket?.connected || false;
   }
 
-  // Envoyer un message dans le chat général
-  sendMessage(content, room = 'general') {
-    if (!this.socket?.connected) {
-      console.error('Socket not connected');
-      return false;
-    }
-    this.socket.emit('message:send', { content, room });
-    return true;
-  }
+  // NOTE: General chat disabled on server; use sendPrivateMessage instead.
 
   // Envoyer un message privé
   sendPrivateMessage(content, recipientId) {
@@ -72,14 +64,16 @@ class SocketService {
     return true;
   }
 
-  // Indicateur de frappe
-  startTyping(room = 'general') {
+  // Indicateur de frappe (exige une room explicite — conversation privée)
+  startTyping(room) {
+    if (!room) return;
     if (this.socket?.connected) {
       this.socket.emit('typing:start', { room });
     }
   }
 
-  stopTyping(room = 'general') {
+  stopTyping(room) {
+    if (!room) return;
     if (this.socket?.connected) {
       this.socket.emit('typing:stop', { room });
     }
@@ -161,7 +155,8 @@ function getHeaders() {
 
 export const chatApi = {
   // Récupérer les messages d'une room
-  async getMessages(room = 'general', limit = 50, before = null) {
+  async getMessages(room = null, limit = 50, before = null) {
+    if (!room) throw new Error('General chat is disabled; provide a private user id via getPrivateMessages')
     let url = `${API_BASE}/api/chat/messages/${room}?limit=${limit}`;
     if (before) {
       url += `&before=${encodeURIComponent(before)}`;
@@ -205,6 +200,18 @@ export const chatApi = {
       throw new Error(data.error || 'Failed to fetch online users');
     }
     
+    return data;
+  },
+
+  // Récupérer tous les utilisateurs enregistrés
+  async getAllUsers() {
+    const response = await fetch(`${API_BASE}/api/users`, { headers: getHeaders() });
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data.error || 'Failed to fetch users');
+    }
+
     return data;
   },
 

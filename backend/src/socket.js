@@ -51,9 +51,6 @@ function initializeSocket(server) {
       userId: socket.userId
     });
 
-    // Rejoindre la room générale
-    socket.join('general');
-
     // Notifier tous les utilisateurs de la nouvelle connexion
     io.emit('user:connected', {
       userId: socket.userId,
@@ -64,40 +61,7 @@ function initializeSocket(server) {
     // Envoyer la liste des utilisateurs connectés au nouvel arrivant
     socket.emit('users:online', Array.from(connectedUsers.values()));
 
-    // Gestion des messages dans le chat général
-    socket.on('message:send', async (data) => {
-      try {
-        const { content, room = 'general' } = data;
-        
-        if (!content || content.trim().length === 0) {
-          return socket.emit('error', { message: 'Message content is required' });
-        }
-
-        const message = new Message({
-          sender: socket.userId,
-          senderUsername: socket.username,
-          content: content.trim(),
-          room: room
-        });
-
-        await message.save();
-
-        const messageData = {
-          id: message._id,
-          sender: socket.userId,
-          senderUsername: socket.username,
-          content: message.content,
-          room: message.room,
-          createdAt: message.createdAt
-        };
-
-        // Envoyer le message à tous les utilisateurs dans la room
-        io.to(room).emit('message:received', messageData);
-      } catch (error) {
-        console.error('Error sending message:', error);
-        socket.emit('error', { message: 'Failed to send message' });
-      }
-    });
+    // NOTE: Chat général désactivé — n'accepterons que des messages privés via 'message:private'
 
     // Gestion des messages privés
     socket.on('message:private', async (data) => {
@@ -150,9 +114,10 @@ function initializeSocket(server) {
       }
     });
 
-    // Indicateur de frappe
+    // Indicateur de frappe (seulement pour rooms privées)
     socket.on('typing:start', (data) => {
-      const { room = 'general' } = data;
+      const { room } = data;
+      if (!room) return;
       socket.to(room).emit('typing:update', {
         userId: socket.userId,
         username: socket.username,
@@ -161,7 +126,8 @@ function initializeSocket(server) {
     });
 
     socket.on('typing:stop', (data) => {
-      const { room = 'general' } = data;
+      const { room } = data;
+      if (!room) return;
       socket.to(room).emit('typing:update', {
         userId: socket.userId,
         username: socket.username,

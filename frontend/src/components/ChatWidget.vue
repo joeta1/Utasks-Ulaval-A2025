@@ -18,7 +18,7 @@
       <!-- Header -->
       <div class="chat-header">
         <div class="chat-header-info">
-          <h3>{{ currentView === 'general' ? 'Chat Général' : `Chat avec ${selectedUser?.username}` }}</h3>
+          <h3>{{ selectedUser ? `Chat avec ${selectedUser.username}` : 'Sélectionnez un utilisateur' }}</h3>
           <span class="online-count">{{ onlineUsers.length }} en ligne</span>
         </div>
         <div class="chat-header-actions">
@@ -44,26 +44,19 @@
         <!-- Liste des utilisateurs (sidebar) -->
         <div v-if="showUserList" class="user-list">
           <div class="user-list-header">
-            <h4>Utilisateurs en ligne</h4>
+            <h4>Utilisateurs</h4>
           </div>
           <div class="user-list-content">
-            <button 
-              @click="selectGeneralChat" 
-              class="user-item"
-              :class="{ active: currentView === 'general' }"
-            >
-              <span class="user-avatar general">🌐</span>
-              <span class="user-name">Chat Général</span>
-            </button>
-            <div v-for="user in otherUsers" :key="user.userId" class="user-item-wrapper">
-              <button 
-                @click="selectPrivateChat(user)" 
+            <!-- Chat général supprimé — seules les conversations privées sont disponibles -->
+            <div v-for="user in displayedUsers" :key="user.userId" class="user-item-wrapper">
+              <button
+                @click="selectPrivateChat(user)"
                 class="user-item"
                 :class="{ active: selectedUser?.userId === user.userId }"
               >
                 <span class="user-avatar">{{ user.username.charAt(0).toUpperCase() }}</span>
                 <span class="user-name">{{ user.username }}</span>
-                <span class="online-indicator"></span>
+                <span v-if="user.online" class="online-indicator"></span>
               </button>
             </div>
           </div>
@@ -113,7 +106,7 @@
             class="message-input"
             maxlength="1000"
           />
-          <button type="submit" class="send-btn" :disabled="!newMessage.trim()">
+          <button type="submit" class="send-btn" :disabled="!newMessage.trim() || !selectedUser || (selectedUser && selectedUser.userId === currentUserId)">
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <line x1="22" y1="2" x2="11" y2="13"></line>
               <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
@@ -137,8 +130,9 @@ const loading = ref(false)
 const messages = ref([])
 const newMessage = ref('')
 const onlineUsers = ref([])
+const allUsers = ref([])
 const typingUsers = ref([])
-const currentView = ref('general') // 'general' ou 'private'
+const currentView = ref('private') // only private conversations
 const selectedUser = ref(null)
 const unreadCount = ref(0)
 const typingTimeout = ref(null)
@@ -147,17 +141,25 @@ const typingTimeout = ref(null)
 const currentUserId = computed(() => authStore.currentUser.value?.id)
 const currentUserName = computed(() => authStore.currentUser.value?.username)
 
-const otherUsers = computed(() => {
-  return onlineUsers.value.filter(user => user.userId !== currentUserId.value)
+const displayedUsers = computed(() => {
+  // Merge registered users with online status and exclude the current user
+  return allUsers.value
+    .filter(u => u.id && u.id !== currentUserId.value)
+    .map(u => {
+      const isOnline = onlineUsers.value.some(ou => ou.userId === u.id)
+      return { userId: u.id, username: u.username, online: isOnline }
+    })
 })
 
 // Methods
-function toggleChat() {
+async function toggleChat() {
   isOpen.value = !isOpen.value
   if (isOpen.value) {
     unreadCount.value = 0
-    connectSocket()
-    loadMessages()
+    await connectSocket()
+    // If no conversation selected, show user list so user chooses a private chat
+    if (!selectedUser.value) showUserList.value = true
+    else loadMessages()
   }
 }
 
@@ -165,15 +167,11 @@ function toggleUserList() {
   showUserList.value = !showUserList.value
 }
 
-function selectGeneralChat() {
-  currentView.value = 'general'
-  selectedUser.value = null
-  loadMessages()
-}
-
 function selectPrivateChat(user) {
+  // Open a private conversation with the selected user
   currentView.value = 'private'
   selectedUser.value = user
+  showUserList.value = false
   loadMessages()
 }
 
@@ -186,24 +184,34 @@ async function connectSocket() {
 
   socketService.connect(token)
 
-  // Écouter les événements
-  socketService.on('message:received', handleNewMessage)
+  // Écouter les événements (private only)
   socketService.on('message:private:received', handleNewPrivateMessage)
   socketService.on('users:online', handleOnlineUsers)
   socketService.on('user:connected', handleUserConnected)
   socketService.on('user:disconnected', handleUserDisconnected)
   socketService.on('typing:update', handleTypingUpdate)
   socketService.on('error', handleError)
+  // Charger la liste des utilisateurs enregistrés
+  try {
+    const res = await chatApi.getAllUsers()
+    if (res?.success) {
+      allUsers.value = res.data
+    }
+  } catch (err) {
+    console.error('Failed to load users:', err)
+  }
 }
 
 async function loadMessages() {
   loading.value = true
   try {
     let data
-    if (currentView.value === 'general') {
-      data = await chatApi.getMessages('general')
-    } else if (selectedUser.value) {
+    if (selectedUser.value) {
       data = await chatApi.getPrivateMessages(selectedUser.value.userId)
+    } else {
+      messages.value = []
+      loading.value = false
+      return
     }
     
     if (data?.success) {
@@ -217,27 +225,16 @@ async function loadMessages() {
   }
 }
 
-function handleNewMessage(message) {
-  if (currentView.value === 'general' && message.room === 'general') {
-    messages.value.push(message)
-    scrollToBottom()
-    
-    if (!isOpen.value && message.sender !== currentUserId.value) {
-      unreadCount.value++
-    }
-  }
-}
-
 function handleNewPrivateMessage(message) {
   // Vérifier si c'est un message de la conversation actuelle
-  if (currentView.value === 'private' && selectedUser.value) {
+  if (selectedUser.value) {
     const expectedRoom = [currentUserId.value, selectedUser.value.userId].sort().join('-')
     if (message.room === expectedRoom) {
       messages.value.push(message)
       scrollToBottom()
     }
   }
-  
+
   if (!isOpen.value && message.sender !== currentUserId.value) {
     unreadCount.value++
   }
@@ -271,13 +268,11 @@ function handleError(error) {
 }
 
 function sendMessage() {
-  if (!newMessage.value.trim()) return
+  if (!newMessage.value.trim() || !selectedUser.value) return
 
-  if (currentView.value === 'general') {
-    socketService.sendMessage(newMessage.value.trim())
-  } else if (selectedUser.value) {
-    socketService.sendPrivateMessage(newMessage.value.trim(), selectedUser.value.userId)
-  }
+  if (selectedUser.value.userId === currentUserId.value) return
+
+  socketService.sendPrivateMessage(newMessage.value.trim(), selectedUser.value.userId)
 
   newMessage.value = ''
   stopTyping()
@@ -288,9 +283,8 @@ function handleTyping() {
     clearTimeout(typingTimeout.value)
   }
 
-  const room = currentView.value === 'general' ? 'general' : 
-    [currentUserId.value, selectedUser.value?.userId].sort().join('-')
-  
+  if (!selectedUser.value) return
+  const room = [currentUserId.value, selectedUser.value.userId].sort().join('-')
   socketService.startTyping(room)
 
   typingTimeout.value = setTimeout(() => {
@@ -303,10 +297,8 @@ function stopTyping() {
     clearTimeout(typingTimeout.value)
     typingTimeout.value = null
   }
-  
-  const room = currentView.value === 'general' ? 'general' : 
-    [currentUserId.value, selectedUser.value?.userId].sort().join('-')
-  
+  if (!selectedUser.value) return
+  const room = [currentUserId.value, selectedUser.value.userId].sort().join('-')
   socketService.stopTyping(room)
 }
 
@@ -343,7 +335,7 @@ onMounted(() => {
       onlineUsers.value = []
       unreadCount.value = 0
       selectedUser.value = null
-      currentView.value = 'general'
+      currentView.value = 'private'
     } else {
       // On re-connecte automatiquement si un token revient (login)
       connectSocket()
