@@ -62,8 +62,8 @@
           </div>
         </div>
 
-        <!-- Zone des messages -->
-        <div class="messages-container" ref="messagesContainer">
+        <!-- Zone des messages : affichée seulement si une conversation privée est sélectionnée -->
+        <div v-if="selectedUser" class="messages-container" ref="messagesContainer">
           <div v-if="loading" class="loading-messages">
             <span>Chargement des messages...</span>
           </div>
@@ -92,10 +92,18 @@
             <span>{{ typingUsers.join(', ') }} {{ typingUsers.length > 1 ? 'écrivent' : 'écrit' }}...</span>
           </div>
         </div>
+
+        <!-- Placeholder when no conversation is selected -->
+        <div v-else class="no-conversation-placeholder" style="flex:1;display:flex;align-items:center;justify-content:center;padding:20px;">
+          <div style="text-align:center;color:#64748b;">
+            <p style="font-weight:600;margin-bottom:6px;">Aucune conversation sélectionnée</p>
+            <p style="font-size:13px;">Choisissez un utilisateur dans la liste pour démarrer une discussion privée.</p>
+          </div>
+        </div>
       </div>
 
-      <!-- Zone de saisie -->
-      <div class="chat-footer">
+      <!-- Zone de saisie : affichée seulement si une conversation privée est sélectionnée -->
+      <div v-if="selectedUser" class="chat-footer">
         <form @submit.prevent="sendMessage" class="message-form">
           <input 
             v-model="newMessage" 
