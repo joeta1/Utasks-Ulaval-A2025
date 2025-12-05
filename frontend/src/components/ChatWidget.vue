@@ -88,6 +88,9 @@
                   <button v-if="message.sender === currentUserId" @click="startEdit(message)" class="btn-icon" title="Éditer" style="margin-left:6px;">
                     ✏️
                   </button>
+                  <button v-if="message.sender === currentUserId" @click="submitDelete(message)" class="btn-icon" title="Supprimer" style="margin-left:4px;">
+                    🗑️
+                  </button>
                 </div>
                 <div class="message-content">
                   <template v-if="editingMessageId === (message.id || message._id)">
@@ -271,6 +274,7 @@ async function connectSocket() {
   socketService.on('user:disconnected', handleUserDisconnected)
   socketService.on('typing:update', handleTypingUpdate)
   socketService.on('message:private:updated', handleUpdatedPrivateMessage)
+  socketService.on('message:private:deleted', handleDeletedPrivateMessage)
   socketService.on('error', handleError)
   // Rejoindre la room actuelle si une conversation est déjà sélectionnée
   if (selectedUser.value) {
@@ -398,6 +402,23 @@ function handleUpdatedPrivateMessage(message) {
   }
 }
 
+function handleDeletedPrivateMessage(message) {
+  try {
+    if (selectedUser.value) {
+      const expectedRoom = [currentUserId.value, selectedUser.value.userId].sort().join('-')
+      if (message.room === expectedRoom) {
+        const idx = messages.value.findIndex(m => (m.id || m._id) === (message.id || message._id))
+        if (idx !== -1) {
+          // remove the message from the array (hard delete)
+          messages.value.splice(idx, 1)
+        }
+      }
+    }
+  } catch (err) {
+    console.error('Error handling deleted private message', err)
+  }
+}
+
 function handleOnlineUsers(users) {
   onlineUsers.value = users
 }
@@ -499,6 +520,26 @@ async function submitEdit(message) {
   }
 }
 
+
+async function submitDelete(message) {
+  if (!message) return
+  // Only allow deleting own messages
+  if (message.sender !== currentUserId.value) return
+  const ok = window.confirm('Supprimer ce message ? Cette action est irréversible.')
+  if (!ok) return
+  try {
+    const res = await chatApi.deleteMessage(message.id || message._id)
+    if (res?.success && res.data) {
+      const idx = messages.value.findIndex(m => (m.id || m._id) === (res.data.id || res.data._id))
+      if (idx !== -1) {
+        // remove from local messages (hard delete)
+        messages.value.splice(idx, 1)
+      }
+    }
+  } catch (err) {
+    console.error('Failed to delete message', err)
+  }
+}
 function toggleEmojiPicker() {
   showEmojiPicker.value = !showEmojiPicker.value
   if (showEmojiPicker.value) {

@@ -242,4 +242,17 @@ export const chatApi = {
     }
     return data;
   }
+  ,
+  // Supprimer (soft-delete) un message
+  async deleteMessage(messageId) {
+    const response = await fetch(`${API_BASE}/api/chat/messages/${messageId}`, {
+      method: 'DELETE',
+      headers: getHeaders()
+    });
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.error || 'Failed to delete message');
+    }
+    return data;
+  }
 };

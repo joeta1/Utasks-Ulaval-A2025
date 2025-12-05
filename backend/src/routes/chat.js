@@ -14,7 +14,7 @@ router.get('/messages/:room', auth, async (req, res) => {
     }
     const { limit = 50, before } = req.query;
 
-    const query = { room };
+    const query = { room, deleted: { $ne: true } };
     
     // Pagination par curseur
     if (before) {
@@ -40,6 +40,8 @@ router.get('/messages/:room', auth, async (req, res) => {
         recipient: msg.recipient,
         edited: msg.edited || false,
         editedAt: msg.editedAt || null,
+        deleted: msg.deleted || false,
+        deletedAt: msg.deletedAt || null,
         createdAt: msg.createdAt
       }))
     });
@@ -64,7 +66,7 @@ router.get('/private/:userId', auth, async (req, res) => {
     // Créer l'ID de room pour la conversation privée (utiliser les chaînes)
     const roomId = [currentUserId, userId].sort().join('-');
 
-    const query = { room: roomId };
+    const query = { room: roomId, deleted: { $ne: true } };
     
     if (before) {
       query.createdAt = { $lt: new Date(before) };
@@ -88,6 +90,8 @@ router.get('/private/:userId', auth, async (req, res) => {
         recipient: msg.recipient,
         edited: msg.edited || false,
         editedAt: msg.editedAt || null,
+        deleted: msg.deleted || false,
+        deletedAt: msg.deletedAt || null,
         createdAt: msg.createdAt,
         isPrivate: true
       }))
@@ -228,5 +232,49 @@ router.put('/messages/:id', auth, async (req, res) => {
   } catch (error) {
     console.error('Error updating message:', error);
     res.status(500).json({ success: false, error: 'Failed to update message' });
+  }
+});
+
+// Endpoint pour supprimer (soft-delete) un message (seul l'expéditeur peut supprimer)
+router.delete('/messages/:id', auth, async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const message = await Message.findById(id);
+    if (!message) return res.status(404).json({ success: false, error: 'Message not found' });
+
+    // Vérifier que c'est bien l'expéditeur
+    if (message.sender.toString() !== req.userId.toString()) {
+      return res.status(403).json({ success: false, error: 'Not authorized to delete this message' });
+    }
+
+    // Hard delete: remove from DB
+    await Message.findByIdAndDelete(id);
+
+    const messageData = {
+      id: id,
+      sender: message.sender.toString(),
+      senderUsername: message.senderUsername,
+      recipient: message.recipient ? message.recipient.toString() : null,
+      room: message.room,
+      createdAt: message.createdAt,
+      isPrivate: !!message.recipient
+    };
+
+    try {
+      const io = getIO();
+      if (message.room) {
+        io.to(message.room).emit('message:private:deleted', messageData);
+      } else {
+        io.emit('message:private:deleted', messageData);
+      }
+    } catch (emitErr) {
+      console.error('Failed to emit message deletion:', emitErr);
+    }
+
+    res.json({ success: true, data: messageData });
+  } catch (error) {
+    console.error('Error deleting message:', error);
+    res.status(500).json({ success: false, error: 'Failed to delete message' });
   }
 });
