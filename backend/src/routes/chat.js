@@ -216,13 +216,22 @@ router.put('/messages/:id', auth, async (req, res) => {
     };
 
     try {
-      // Émettre l'événement de mise à jour aux membres de la room privée
+      // Émettre l'événement de mise à jour directement aux sockets de l'expéditeur et du destinataire
       const io = getIO();
+      const connected = getConnectedUsers();
+      const senderSocket = connected.find(u => u.userId === message.sender.toString());
+      const recipientSocket = connected.find(u => u.userId === (message.recipient ? message.recipient.toString() : null));
+
+      if (senderSocket && senderSocket.socketId) {
+        io.to(senderSocket.socketId).emit('message:private:updated', messageData);
+      }
+      if (recipientSocket && recipientSocket.socketId) {
+        io.to(recipientSocket.socketId).emit('message:private:updated', messageData);
+      }
+
+      // Fallback: si personne n'est connecté dans la room, émettre à la room (au cas où)
       if (message.room) {
         io.to(message.room).emit('message:private:updated', messageData);
-      } else {
-        // fallback: émettre au destinataire et à l'expéditeur
-        io.emit('message:private:updated', messageData);
       }
     } catch (emitErr) {
       console.error('Failed to emit message update:', emitErr);
@@ -262,11 +271,22 @@ router.delete('/messages/:id', auth, async (req, res) => {
     };
 
     try {
+      // Emit directly to sender and recipient sockets for real-time update
       const io = getIO();
+      const connected = getConnectedUsers();
+      const senderSocket = connected.find(u => u.userId === message.sender.toString());
+      const recipientSocket = connected.find(u => u.userId === (message.recipient ? message.recipient.toString() : null));
+
+      if (senderSocket && senderSocket.socketId) {
+        io.to(senderSocket.socketId).emit('message:private:deleted', messageData);
+      }
+      if (recipientSocket && recipientSocket.socketId) {
+        io.to(recipientSocket.socketId).emit('message:private:deleted', messageData);
+      }
+
+      // Fallback: also emit to the room
       if (message.room) {
         io.to(message.room).emit('message:private:deleted', messageData);
-      } else {
-        io.emit('message:private:deleted', messageData);
       }
     } catch (emitErr) {
       console.error('Failed to emit message deletion:', emitErr);
