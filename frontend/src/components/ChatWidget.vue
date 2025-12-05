@@ -85,12 +85,11 @@
                 <div class="message-header">
                   <span class="message-sender">{{ message.senderUsername }}</span>
                   <span class="message-time">{{ formatTime(message.createdAt) }}</span>
-                  <button v-if="message.sender === currentUserId" @click="startEdit(message)" class="btn-icon" title="Éditer" style="margin-left:6px;">
-                    ✏️
-                  </button>
-                  <button v-if="message.sender === currentUserId" @click="submitDelete(message)" class="btn-icon" title="Supprimer" style="margin-left:4px;">
-                    🗑️
-                  </button>
+                </div>
+
+                <div class="message-actions" v-if="message.sender === currentUserId && editingMessageId !== (message.id || message._id)">
+                  <button @click="startEdit(message)" class="btn-icon small" title="Éditer">✏️</button>
+                  <button @click="submitDelete(message)" class="btn-icon small" title="Supprimer">🗑️</button>
                 </div>
                 <div class="message-content">
                   <template v-if="editingMessageId === (message.id || message._id)">
@@ -992,6 +991,11 @@ watch(messages, () => {
   align-self: flex-start;
 }
 
+.message {
+  position: relative;
+  padding-top: 20px; /* donner de la place pour les boutons d'action en haut */
+}
+
 .message.own-message {
   align-self: flex-end;
 }
@@ -1001,6 +1005,56 @@ watch(messages, () => {
   gap: 8px;
   margin-bottom: 4px;
   font-size: 11px;
+}
+
+.message-actions {
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  display: flex;
+  gap: 6px;
+  z-index: 10;
+}
+
+.btn-icon.small {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  font-size: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Styles pour rendre les boutons lisibles sur fonds colorés */
+.message-actions .btn-icon.small {
+  background: rgba(255,255,255,0.95);
+  border: 1px solid rgba(15,23,42,0.06);
+  border-radius: 6px;
+  color: #0f172a;
+  box-shadow: 0 4px 10px rgba(2,6,23,0.12);
+}
+
+.message .message-content {
+  /* s'assurer que le contenu n'est pas couvert par les boutons */
+  position: relative;
+  z-index: 1;
+}
+
+/* Variante pour petits écrans : réduire l'espace des actions */
+@media (max-width: 480px) {
+  .message {
+    padding-top: 12px;
+  }
+  .message-actions {
+    top: 4px;
+    right: 6px;
+  }
+  .message-actions .btn-icon.small {
+    width: 24px;
+    height: 24px;
+    font-size: 12px;
+  }
 }
 
 .message-sender {
