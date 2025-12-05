@@ -75,9 +75,18 @@ router.get('/:id', async (req, res) => {
 });
 
 // GET /api/users - Get list of all users (auth required)
+// Supports search via ?query=... parameter
 router.get('/', authMiddleware, async (req, res) => {
   try {
-    const users = await User.find({}, { username: 1 }).sort({ username: 1 }).lean();
+    const { query } = req.query;
+    let filter = {};
+    
+    // If search query is provided, filter users by username
+    if (query && query.trim()) {
+      filter.username = { $regex: query.trim(), $options: 'i' };
+    }
+    
+    const users = await User.find(filter, { username: 1 }).sort({ username: 1 }).lean();
     res.json({
       success: true,
       data: users.map(u => ({ id: u._id.toString(), username: u.username }))

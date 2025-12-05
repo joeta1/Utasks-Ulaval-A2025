@@ -40,22 +40,78 @@
       <div class="chat-body">
         <!-- Liste des utilisateurs (sidebar) -->
         <div v-if="showUserList" class="user-list">
-          <div class="user-list-header">
-            <h4>Utilisateurs</h4>
+          <!-- Barre de recherche -->
+          <div class="search-bar">
+            <input 
+              v-model="searchQuery"
+              @input="onSearchInput"
+              type="text" 
+              placeholder="Rechercher un utilisateur..."
+              class="search-input"
+            />
+            <svg v-if="!searchQuery" class="search-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="11" cy="11" r="8"></circle>
+              <path d="m21 21-4.35-4.35"></path>
+            </svg>
+            <button v-else @click="clearSearch" class="clear-search-btn" title="Effacer">
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="18" y1="6" x2="6" y2="18"></line>
+                <line x1="6" y1="6" x2="18" y2="18"></line>
+              </svg>
+            </button>
           </div>
+
           <div class="user-list-content">
-            <!-- Chat général supprimé — seules les conversations privées sont disponibles -->
-            <div v-for="user in displayedUsers" :key="user.userId" class="user-item-wrapper">
-              <button
-                @click="selectPrivateChat(user)"
-                class="user-item"
-                :class="{ active: selectedUser?.userId === user.userId }"
-              >
-                <span class="user-avatar">{{ user.username.charAt(0).toUpperCase() }}</span>
-                <span class="user-name" :class="{ unread: user.unreadCount > 0 }">{{ user.username }}</span>
-                <span v-if="user.unreadCount > 0" class="user-unread-badge">{{ user.unreadCount }}</span>
-                <span v-if="user.online" class="online-indicator"></span>
-              </button>
+            <!-- Section: Conversations récentes -->
+            <div v-if="recentConversations.length > 0 && !searchQuery" class="user-section">
+              <h4 class="section-title">Conversations récentes</h4>
+              <div v-for="user in recentConversations" :key="user.userId" class="user-item-wrapper">
+                <button
+                  @click="selectPrivateChat(user)"
+                  class="user-item"
+                  :class="{ active: selectedUser?.userId === user.userId }"
+                >
+                  <span class="user-avatar">{{ user.username.charAt(0).toUpperCase() }}</span>
+                  <span class="user-name" :class="{ unread: user.unreadCount > 0 }">{{ user.username }}</span>
+                  <span v-if="user.unreadCount > 0" class="user-unread-badge">{{ user.unreadCount }}</span>
+                  <span v-if="user.online" class="online-indicator"></span>
+                </button>
+              </div>
+            </div>
+
+            <!-- Section: Résultats de recherche -->
+            <div v-if="searchQuery && searchQuery.length >= minSearchLength" class="user-section">
+              <h4 class="section-title">Résultats de recherche</h4>
+              <div v-if="searchLoading" class="search-loading">
+                <span>Recherche...</span>
+              </div>
+              <div v-else-if="searchResults.length === 0" class="no-results">
+                <p>Aucun utilisateur trouvé</p>
+              </div>
+              <div v-else v-for="user in searchResults" :key="user.userId" class="user-item-wrapper">
+                <button
+                  @click="selectPrivateChat(user)"
+                  class="user-item"
+                  :class="{ active: selectedUser?.userId === user.userId }"
+                >
+                  <span class="user-avatar">{{ user.username.charAt(0).toUpperCase() }}</span>
+                  <span class="user-name" :class="{ unread: user.unreadCount > 0 }">{{ user.username }}</span>
+                  <span v-if="user.unreadCount > 0" class="user-unread-badge">{{ user.unreadCount }}</span>
+                  <span v-if="user.online" class="online-indicator"></span>
+                </button>
+              </div>
+            </div>
+
+            <!-- Message d'aide si rien n'est affiché -->
+            <div v-if="!searchQuery && recentConversations.length === 0" class="empty-state">
+              <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" opacity="0.3">
+                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+              </svg>
+              <p style="margin-top:12px;font-size:13px;color:#64748b;">Recherchez un utilisateur pour démarrer une conversation</p>
+            </div>
+            
+            <div v-if="searchQuery && searchQuery.length < minSearchLength" class="search-hint">
+              <p>Tapez au moins {{ minSearchLength }} caractères pour rechercher</p>
             </div>
           </div>
         </div>
@@ -170,6 +226,7 @@
 import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import authStore from '../stores/auth'
 import { socketService, chatApi } from '../services/socket'
+import { usersApi } from '../services/api'
 
 // State
 const isOpen = ref(false)
@@ -189,6 +246,14 @@ const unreadCount = computed(() => {
 const typingTimeout = ref(null)
 const currentRoom = ref(null)
 
+// Search state
+const searchQuery = ref('')
+const searchResults = ref([])
+const searchLoading = ref(false)
+const searchDebounceTimeout = ref(null)
+const minSearchLength = 2
+const recentUserIds = ref(new Set())
+
 // Computed
 const currentUserId = computed(() => authStore.currentUser.value?.id)
 const currentUserName = computed(() => authStore.currentUser.value?.username)
@@ -201,6 +266,25 @@ const displayedUsers = computed(() => {
       const isOnline = onlineUsers.value.some(ou => ou.userId === u.id)
       return { userId: u.id, username: u.username, online: isOnline, unreadCount: unreadMap.value[u.id] || 0 }
     })
+})
+
+const recentConversations = computed(() => {
+  // Afficher les utilisateurs avec qui on a déjà eu des conversations (présents dans recentUserIds)
+  const recent = Array.from(recentUserIds.value)
+    .map(userId => {
+      const user = allUsers.value.find(u => u.id === userId)
+      if (!user) return null
+      const isOnline = onlineUsers.value.some(ou => ou.userId === user.id)
+      return { 
+        userId: user.id, 
+        username: user.username, 
+        online: isOnline, 
+        unreadCount: unreadMap.value[user.id] || 0 
+      }
+    })
+    .filter(u => u !== null)
+    .sort((a, b) => (b.unreadCount || 0) - (a.unreadCount || 0)) // Priorité aux messages non lus
+  return recent
 })
 
 // Methods
@@ -228,6 +312,10 @@ function selectPrivateChat(user) {
 
   selectedUser.value = user
   showUserList.value = false
+
+  // Ajouter aux conversations récentes
+  recentUserIds.value.add(user.userId)
+  saveRecentConversations()
 
   // Mark this conversation as read (clear unread count)
   if (unreadMap.value[user.userId]) {
@@ -281,7 +369,7 @@ async function connectSocket() {
     currentRoom.value = room
     socketService.joinRoom(room)
   }
-  // Charger la liste des utilisateurs enregistrés
+  // Charger la liste des utilisateurs enregistrés (sans recherche, juste pour la liste complète en mémoire)
   try {
     const res = await chatApi.getAllUsers()
     if (res?.success) {
@@ -298,6 +386,9 @@ async function connectSocket() {
   } catch (err) {
     console.error('Failed to load users:', err)
   }
+  
+  // Charger les conversations récentes depuis le localStorage
+  loadRecentConversations()
 }
 
 async function loadMessages() {
@@ -330,9 +421,90 @@ async function loadMessages() {
   }
 }
 
+// Search functions
+function onSearchInput() {
+  // Clear previous timeout
+  if (searchDebounceTimeout.value) {
+    clearTimeout(searchDebounceTimeout.value)
+  }
+  
+  // Reset results if query is too short
+  if (!searchQuery.value || searchQuery.value.length < minSearchLength) {
+    searchResults.value = []
+    return
+  }
+  
+  // Debounce the search
+  searchDebounceTimeout.value = setTimeout(() => {
+    performSearch()
+  }, 300)
+}
+
+async function performSearch() {
+  if (!searchQuery.value || searchQuery.value.length < minSearchLength) {
+    searchResults.value = []
+    return
+  }
+  
+  searchLoading.value = true
+  try {
+    const res = await usersApi.search(searchQuery.value)
+    if (res?.success) {
+      // Filter out current user and map to display format
+      searchResults.value = res.data
+        .filter(u => u.id !== currentUserId.value)
+        .map(u => {
+          const isOnline = onlineUsers.value.some(ou => ou.userId === u.id)
+          return {
+            userId: u.id,
+            username: u.username,
+            online: isOnline,
+            unreadCount: unreadMap.value[u.id] || 0
+          }
+        })
+    }
+  } catch (err) {
+    console.error('Search failed:', err)
+    searchResults.value = []
+  } finally {
+    searchLoading.value = false
+  }
+}
+
+function clearSearch() {
+  searchQuery.value = ''
+  searchResults.value = []
+  if (searchDebounceTimeout.value) {
+    clearTimeout(searchDebounceTimeout.value)
+  }
+}
+
+// Recent conversations management
+function loadRecentConversations() {
+  try {
+    const stored = localStorage.getItem('chat-recent-conversations')
+    if (stored) {
+      const parsed = JSON.parse(stored)
+      recentUserIds.value = new Set(parsed)
+    }
+  } catch (err) {
+    console.error('Failed to load recent conversations:', err)
+    recentUserIds.value = new Set()
+  }
+}
+
+function saveRecentConversations() {
+  try {
+    const arr = Array.from(recentUserIds.value)
+    localStorage.setItem('chat-recent-conversations', JSON.stringify(arr))
+  } catch (err) {
+    console.error('Failed to save recent conversations:', err)
+  }
+}
+
 function handleNewPrivateMessage(message) {
-  // Vérifier si c'est un message de la conversation actuelle
-  if (selectedUser.value) {
+  // Vérifier si c'est un message de la conversation actuellement ouverte et visible
+  if (selectedUser.value && isOpen.value) {
     const expectedRoom = [currentUserId.value, selectedUser.value.userId].sort().join('-')
     if (message.room === expectedRoom) {
       messages.value.push(message)
@@ -368,16 +540,21 @@ function handleNewPrivateMessage(message) {
         // fallback si la ref n'est pas prête
         scrollToBottom()
       }
+      return
     }
-  } else {
-    // Message pour une autre conversation (ou chat fermé)
-    if (message.sender !== currentUserId.value) {
-      // increment unread count for that sender
-      const sid = message.sender
-      const next = (unreadMap.value[sid] || 0) + 1
-      unreadMap.value = { ...unreadMap.value, [sid]: next }
-      console.debug('[chat] increment unread for', sid, '->', next)
-    }
+  }
+  
+  // Message pour une autre conversation (ou chat fermé, ou conversation non visible)
+  if (message.sender !== currentUserId.value) {
+    // increment unread count for that sender
+    const sid = message.sender
+    const next = (unreadMap.value[sid] || 0) + 1
+    unreadMap.value = { ...unreadMap.value, [sid]: next }
+    console.debug('[chat] increment unread for', sid, '->', next)
+    
+    // Ajouter l'utilisateur aux conversations récentes
+    recentUserIds.value.add(sid)
+    saveRecentConversations()
   }
 }
 
@@ -685,6 +862,9 @@ onUnmounted(() => {
   if (typingTimeout.value) {
     clearTimeout(typingTimeout.value)
   }
+  if (searchDebounceTimeout.value) {
+    clearTimeout(searchDebounceTimeout.value)
+  }
   if (currentRoom.value) {
     socketService.leaveRoom(currentRoom.value)
     currentRoom.value = null
@@ -862,30 +1042,97 @@ watch(messages, () => {
 }
 
 .user-list {
-  width: 160px;
+  width: 220px;
   background: #f8fafc;
   border-right: 1px solid #e2e8f0;
   display: flex;
   flex-direction: column;
 }
 
-.user-list-header {
+.search-bar {
   padding: 12px;
   border-bottom: 1px solid #e2e8f0;
+  position: relative;
 }
 
-.user-list-header h4 {
-  margin: 0;
-  font-size: 12px;
-  text-transform: uppercase;
+.search-input {
+  width: 100%;
+  padding: 8px 32px 8px 32px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  font-size: 13px;
+  outline: none;
+  transition: border-color 0.2s;
+  background: white;
+}
+
+.search-input:focus {
+  border-color: #667eea;
+}
+
+.search-icon {
+  position: absolute;
+  left: 22px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: #94a3b8;
+  pointer-events: none;
+}
+
+.clear-search-btn {
+  position: absolute;
+  right: 18px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: transparent;
+  border: none;
+  color: #94a3b8;
+  cursor: pointer;
+  padding: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  transition: background 0.2s, color 0.2s;
+}
+
+.clear-search-btn:hover {
+  background: #f1f5f9;
   color: #64748b;
-  font-weight: 600;
 }
 
 .user-list-content {
   flex: 1;
   overflow-y: auto;
+  padding: 0;
+}
+
+.user-section {
   padding: 8px;
+  margin-bottom: 4px;
+}
+
+.section-title {
+  margin: 0 0 8px 0;
+  font-size: 11px;
+  text-transform: uppercase;
+  color: #64748b;
+  font-weight: 600;
+  padding: 0 4px;
+}
+
+.search-loading,
+.no-results,
+.empty-state,
+.search-hint {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 20px 12px;
+  text-align: center;
+  color: #64748b;
+  font-size: 13px;
 }
 
 .user-item {
@@ -1197,7 +1444,18 @@ watch(messages, () => {
   }
   
   .user-list {
-    width: 140px;
+    width: 180px;
+  }
+  
+  .search-input {
+    font-size: 12px;
+    padding: 6px 28px 6px 28px;
+  }
+}
+
+@media (min-width: 481px) {
+  .chat-panel {
+    width: 600px;
   }
 }
 </style>

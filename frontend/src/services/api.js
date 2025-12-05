@@ -132,6 +132,11 @@ export const usersApi = {
   
   async delete(id) {
     return apiFetch(`/api/users/${id}`, { method: 'DELETE' });
+  },
+  
+  async search(query) {
+    const params = query ? `?query=${encodeURIComponent(query)}` : '';
+    return apiFetch(`/api/users${params}`);
   }
 };
 
