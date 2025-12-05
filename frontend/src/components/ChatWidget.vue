@@ -254,6 +254,8 @@ async function loadMessages() {
     
     if (data?.success) {
       messages.value = data.data
+      // Lors du chargement initial d'une conversation, on veut être en bas
+      atBottom.value = true
       scrollToBottom()
     }
   } catch (error) {
@@ -269,7 +271,18 @@ function handleNewPrivateMessage(message) {
     const expectedRoom = [currentUserId.value, selectedUser.value.userId].sort().join('-')
     if (message.room === expectedRoom) {
       messages.value.push(message)
-      scrollToBottom()
+      // Ne scroller automatiquement que si l'utilisateur est déjà en bas
+      if (messagesContainer.value) {
+        if (isElementAtBottom(messagesContainer.value)) {
+          atBottom.value = true
+          scrollToBottom()
+        } else {
+          atBottom.value = false
+        }
+      } else {
+        // fallback si la ref n'est pas prête
+        scrollToBottom()
+      }
     }
   }
 
@@ -350,6 +363,18 @@ function formatTime(dateString) {
 }
 
 const messagesContainer = ref(null)
+const atBottom = ref(true)
+
+function isElementAtBottom(el, threshold = 20) {
+  if (!el) return true
+  const distance = el.scrollHeight - (el.scrollTop + el.clientHeight)
+  return distance <= threshold
+}
+
+function onMessagesContainerScroll() {
+  if (!messagesContainer.value) return
+  atBottom.value = isElementAtBottom(messagesContainer.value)
+}
 
 function scrollToBottom() {
   nextTick(() => {
@@ -358,6 +383,12 @@ function scrollToBottom() {
     }
   })
 }
+
+// Attacher/détacher l'écouteur de scroll quand l'élément est rendu
+watch(messagesContainer, (el, oldEl) => {
+  if (oldEl) oldEl.removeEventListener('scroll', onMessagesContainerScroll)
+  if (el) el.addEventListener('scroll', onMessagesContainerScroll)
+}, { immediate: true })
 
 // Lifecycle
 onMounted(() => {
@@ -392,11 +423,15 @@ onUnmounted(() => {
     socketService.leaveRoom(currentRoom.value)
     currentRoom.value = null
   }
+  // Detach scroll listener if still attached
+  if (messagesContainer.value) {
+    messagesContainer.value.removeEventListener('scroll', onMessagesContainerScroll)
+  }
 })
 
 // Watchers
 watch(messages, () => {
-  scrollToBottom()
+  if (atBottom.value) scrollToBottom()
 }, { deep: true })
 </script>
 
