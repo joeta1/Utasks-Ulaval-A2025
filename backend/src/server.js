@@ -2,6 +2,8 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const mongoose = require('mongoose');
+const http = require('http');
+const { initializeSocket } = require('./socket');
 
 const authRoutes = require('./routes/auth');
 const userRoutes = require('./routes/users');
@@ -9,9 +11,14 @@ const boardRoutes = require('./routes/boards');
 const listRoutes = require('./routes/lists');
 const cardRoutes = require('./routes/cards');
 const healthRoutes = require('./routes/health');
+const chatRoutes = require('./routes/chat');
 
 const app = express();
+const server = http.createServer(app);
 const PORT = process.env.PORT || 3000;
+
+// Initialize Socket.io
+initializeSocket(server);
 
 // Middleware
 app.use(cors({
@@ -27,6 +34,7 @@ app.use('/api/users', userRoutes);
 app.use('/api/boards', boardRoutes);
 app.use('/api/lists', listRoutes);
 app.use('/api/cards', cardRoutes);
+app.use('/api/chat', chatRoutes);
 
 // Error handling middleware
 app.use((err, req, res, _next) => {
@@ -42,7 +50,7 @@ app.use((err, req, res, _next) => {
 mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/utasks')
   .then(() => {
     console.log('Connected to MongoDB');
-    app.listen(PORT, () => {
+    server.listen(PORT, () => {
       console.log(`Server running on port ${PORT}`);
     });
   })
@@ -51,4 +59,4 @@ mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/utasks')
     process.exit(1);
   });
 
-module.exports = app;
+module.exports = { app, server };

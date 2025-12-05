@@ -2,7 +2,7 @@
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 
-const apiBase = 'https://utasks-026af75f15a3.herokuapp.com'
+const apiBase = import.meta.env.VITE_API_URL || 'http://localhost:3000'
 const router = useRouter()
 
 const newUserName = ref('')

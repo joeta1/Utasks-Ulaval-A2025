@@ -13,6 +13,12 @@ It allows users to create an account, log in, and manage their tasks by creating
 - ✅ Card priority levels (High, Medium, Low) with color coding
 - ✅ Dark mode support
 - ✅ Fully responsive design
+- ✅ **Real-time chat** with WebSocket (Socket.io)
+  - General chat room for all users
+  - Private messaging between users
+  - Online users list
+  - Typing indicators
+  - Message history persistence
 
 ## 🛠️ Technologies
 
@@ -32,6 +38,7 @@ It allows users to create an account, log in, and manage their tasks by creating
 - [**Mongoose**](https://mongoosejs.com/) – MongoDB ODM
 - [**JWT**](https://jwt.io/) – JSON Web Tokens for authentication
 - [**bcryptjs**](https://www.npmjs.com/package/bcryptjs) – Password hashing
+- [**Socket.io**](https://socket.io/) – Real-time bidirectional communication
 
 ## 📁 Project Structure
 
@@ -39,16 +46,17 @@ It allows users to create an account, log in, and manage their tasks by creating
 utasks/
 ├── frontend/             # Frontend (Vue.js)
 │   ├── src/
-│   │   ├── components/   # Vue components
+│   │   ├── components/   # Vue components (ChatWidget, BoardHeader, etc.)
 │   │   ├── pages/        # Page views
 │   │   ├── router/       # Vue Router
-│   │   └── services/     # API services
+│   │   └── services/     # API services (api.js, socket.js)
 │   └── package.json
 ├── backend/              # Backend API (Node.js/Express)
 │   ├── src/
 │   │   ├── middleware/   # Authentication middleware (JWT)
-│   │   ├── models/       # MongoDB models (User, Board, List, Card)
-│   │   ├── routes/       # API routes
+│   │   ├── models/       # MongoDB models (User, Board, List, Card, Message)
+│   │   ├── routes/       # API routes (auth, boards, lists, cards, chat)
+│   │   ├── socket.js     # Socket.io configuration
 │   │   └── server.js     # Entry point
 │   └── package.json
 └── README.md
@@ -169,6 +177,26 @@ utasks/
 | GET | `/` | Welcome message |
 | GET | `/api/health` | Health check |
 
+### Chat (Real-time)
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/chat/messages/:room` | Get message history for a room |
+| GET | `/api/chat/private/:userId` | Get private messages with a user |
+| GET | `/api/chat/users/online` | Get list of online users |
+| GET | `/api/chat/conversations` | Get recent conversations |
+
+### WebSocket Events (Socket.io)
+| Event | Direction | Description |
+|-------|-----------|-------------|
+| `message:send` | Client → Server | Send a message to a room |
+| `message:received` | Server → Client | Receive a new message |
+| `message:private` | Client → Server | Send a private message |
+| `message:private:received` | Server → Client | Receive a private message |
+| `users:online` | Server → Client | List of online users |
+| `user:connected` | Server → Client | User connected notification |
+| `user:disconnected` | Server → Client | User disconnected notification |
+| `typing:start` / `typing:stop` | Bidirectional | Typing indicators |
+
 ## 🔐 Authentication
 
 The API uses JWT (JSON Web Tokens) for authentication. Include the token in the `Authorization` header:
@@ -210,6 +238,10 @@ Access it from any device (phone, tablet, desktop, laptop)!
 - **Drag & Drop**: Move cards between lists or reorder lists
 - **Priority**: Set card priority (High 🔴, Medium 🟡, Low 🟢)
 - **Dark Mode**: Toggle between light and dark themes
+- **Real-time Chat**: Click the chat icon 💬 in the bottom-right corner to:
+  - Chat with all online users in the general room
+  - Start private conversations with specific users
+  - See who's online and who's typing
 
 ## 👥 Team
 - GLO3102 - Team 37
