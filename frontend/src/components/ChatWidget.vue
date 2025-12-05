@@ -141,6 +141,7 @@ const currentView = ref('private') // only private conversations
 const selectedUser = ref(null)
 const unreadCount = ref(0)
 const typingTimeout = ref(null)
+const currentRoom = ref(null)
 
 // Computed
 const currentUserId = computed(() => authStore.currentUser.value?.id)
@@ -173,14 +174,33 @@ async function toggleChat() {
 function selectPrivateChat(user) {
   // Open a private conversation with the selected user
   currentView.value = 'private'
+
+  // Leave previous room if any
+  if (currentRoom.value) {
+    socketService.leaveRoom(currentRoom.value)
+    currentRoom.value = null
+  }
+
   selectedUser.value = user
   showUserList.value = false
+
+  // Join the private room for typing presence
+  const room = [currentUserId.value, selectedUser.value.userId].sort().join('-')
+  currentRoom.value = room
+  socketService.joinRoom(room)
+
   loadMessages()
 }
 
 function goBack() {
   // Quitter la conversation privée et revenir à la liste d'utilisateurs
   stopTyping()
+  // Leave room
+  if (currentRoom.value) {
+    socketService.leaveRoom(currentRoom.value)
+    currentRoom.value = null
+  }
+
   selectedUser.value = null
   messages.value = []
   loading.value = false
@@ -203,6 +223,12 @@ async function connectSocket() {
   socketService.on('user:disconnected', handleUserDisconnected)
   socketService.on('typing:update', handleTypingUpdate)
   socketService.on('error', handleError)
+  // Rejoindre la room actuelle si une conversation est déjà sélectionnée
+  if (selectedUser.value) {
+    const room = [currentUserId.value, selectedUser.value.userId].sort().join('-')
+    currentRoom.value = room
+    socketService.joinRoom(room)
+  }
   // Charger la liste des utilisateurs enregistrés
   try {
     const res = await chatApi.getAllUsers()
@@ -296,7 +322,8 @@ function handleTyping() {
   }
 
   if (!selectedUser.value) return
-  const room = [currentUserId.value, selectedUser.value.userId].sort().join('-')
+  // Use currentRoom if available
+  const room = currentRoom.value || [currentUserId.value, selectedUser.value.userId].sort().join('-')
   socketService.startTyping(room)
 
   typingTimeout.value = setTimeout(() => {
@@ -310,7 +337,7 @@ function stopTyping() {
     typingTimeout.value = null
   }
   if (!selectedUser.value) return
-  const room = [currentUserId.value, selectedUser.value.userId].sort().join('-')
+  const room = currentRoom.value || [currentUserId.value, selectedUser.value.userId].sort().join('-')
   socketService.stopTyping(room)
 }
 
@@ -360,6 +387,10 @@ onUnmounted(() => {
   socketService.removeAllListeners()
   if (typingTimeout.value) {
     clearTimeout(typingTimeout.value)
+  }
+  if (currentRoom.value) {
+    socketService.leaveRoom(currentRoom.value)
+    currentRoom.value = null
   }
 })
 
