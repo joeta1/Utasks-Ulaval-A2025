@@ -52,7 +52,8 @@
                 :class="{ active: selectedUser?.userId === user.userId }"
               >
                 <span class="user-avatar">{{ user.username.charAt(0).toUpperCase() }}</span>
-                <span class="user-name">{{ user.username }}</span>
+                <span class="user-name" :class="{ unread: user.unreadCount > 0 }">{{ user.username }}</span>
+                <span v-if="user.unreadCount > 0" class="user-unread-badge">{{ user.unreadCount }}</span>
                 <span v-if="user.online" class="online-indicator"></span>
               </button>
             </div>
@@ -71,16 +72,22 @@
           
           <div v-else class="messages-list">
             <div 
-              v-for="message in messages" 
+              v-for="(message, index) in messages" 
               :key="message.id" 
-              class="message"
-              :class="{ 'own-message': message.sender === currentUserId }"
             >
-              <div class="message-header">
-                <span class="message-sender">{{ message.senderUsername }}</span>
-                <span class="message-time">{{ formatTime(message.createdAt) }}</span>
+              <!-- Barre 'Nouveaux messages' : insérée une seule fois avant le premier message non lu -->
+              <!-- Tailwind suggestion: "mx-auto px-3 py-1 bg-white/90 text-sm text-gray-600 rounded-full shadow" -->
+              <div v-if="hasNewMessages && newMessagesStartIndex !== null && index === newMessagesStartIndex" class="new-messages-divider">
+                <span class="divider-text">Nouveaux messages</span>
               </div>
-              <div class="message-content">{{ message.content }}</div>
+
+              <div class="message" :class="{ 'own-message': message.sender === currentUserId }">
+                <div class="message-header">
+                  <span class="message-sender">{{ message.senderUsername }}</span>
+                  <span class="message-time">{{ formatTime(message.createdAt) }}</span>
+                </div>
+                <div class="message-content">{{ message.content }}</div>
+              </div>
             </div>
           </div>
           <!-- Indicateur de nouveaux messages (flottant en bas) -->
@@ -146,7 +153,10 @@ const allUsers = ref([])
 const typingUsers = ref([])
 const currentView = ref('private') // only private conversations
 const selectedUser = ref(null)
-const unreadCount = ref(0)
+const unreadMap = ref({})
+const unreadCount = computed(() => {
+  return Object.values(unreadMap.value).reduce((s, v) => s + (v || 0), 0)
+})
 const typingTimeout = ref(null)
 const currentRoom = ref(null)
 
@@ -160,7 +170,7 @@ const displayedUsers = computed(() => {
     .filter(u => u.id && u.id !== currentUserId.value)
     .map(u => {
       const isOnline = onlineUsers.value.some(ou => ou.userId === u.id)
-      return { userId: u.id, username: u.username, online: isOnline }
+      return { userId: u.id, username: u.username, online: isOnline, unreadCount: unreadMap.value[u.id] || 0 }
     })
 })
 
@@ -168,7 +178,6 @@ const displayedUsers = computed(() => {
 async function toggleChat() {
   isOpen.value = !isOpen.value
   if (isOpen.value) {
-    unreadCount.value = 0
     await connectSocket()
     // If no conversation selected, show user list so user chooses a private chat
     if (!selectedUser.value) showUserList.value = true
@@ -190,6 +199,11 @@ function selectPrivateChat(user) {
 
   selectedUser.value = user
   showUserList.value = false
+
+  // Mark this conversation as read (clear unread count)
+  if (unreadMap.value[user.userId]) {
+    unreadMap.value = { ...unreadMap.value, [user.userId]: 0 }
+  }
 
   // Join the private room for typing presence
   const room = [currentUserId.value, selectedUser.value.userId].sort().join('-')
@@ -241,6 +255,14 @@ async function connectSocket() {
     const res = await chatApi.getAllUsers()
     if (res?.success) {
       allUsers.value = res.data
+      // Ensure unreadMap has an entry for each user
+      res.data.forEach(u => {
+        if (u.id && u.id !== currentUserId.value) {
+          if (unreadMap.value[u.id] == null) {
+            unreadMap.value = { ...unreadMap.value, [u.id]: 0 }
+          }
+        }
+      })
     }
   } catch (err) {
     console.error('Failed to load users:', err)
@@ -263,6 +285,11 @@ async function loadMessages() {
       messages.value = data.data
       // Lors du chargement initial d'une conversation, on veut être en bas
       atBottom.value = true
+      // Marquer tout comme lu
+      lastReadMessageId.value = messages.value.length ? messages.value[messages.value.length - 1].id : null
+      newMessagesStartIndex.value = null
+      newMessagesCount.value = 0
+      hasNewMessages.value = false
       scrollToBottom()
     }
   } catch (error) {
@@ -278,16 +305,30 @@ function handleNewPrivateMessage(message) {
     const expectedRoom = [currentUserId.value, selectedUser.value.userId].sort().join('-')
     if (message.room === expectedRoom) {
       messages.value.push(message)
+      console.debug('[chat] new private message', {
+        id: message.id,
+        sender: message.sender,
+        currentUserId: currentUserId.value,
+        messagesLength: messages.value.length
+      })
       // Ne scroller automatiquement que si l'utilisateur est déjà en bas
       if (messagesContainer.value) {
         if (isElementAtBottom(messagesContainer.value)) {
           atBottom.value = true
           scrollToBottom()
+          // marquer le message comme lu si on est en bas
+          lastReadMessageId.value = message.id
         } else {
           atBottom.value = false
           // Si l'utilisateur n'est pas en bas et le message vient d'un autre utilisateur,
           // afficher l'indicateur de nouveaux messages
           if (message.sender !== currentUserId.value) {
+            console.debug('[chat] marking newMessagesStartIndex (first unread) at index', messages.value.length - 1)
+            // si c'est le premier nouveau message depuis la dernière lecture,
+            // enregistrer l'index où commencer la zone "Nouveaux messages"
+            if (newMessagesStartIndex.value === null) {
+              newMessagesStartIndex.value = messages.value.length - 1
+            }
             hasNewMessages.value = true
             newMessagesCount.value = (newMessagesCount.value || 0) + 1
           }
@@ -297,10 +338,15 @@ function handleNewPrivateMessage(message) {
         scrollToBottom()
       }
     }
-  }
-
-  if (!isOpen.value && message.sender !== currentUserId.value) {
-    unreadCount.value++
+  } else {
+    // Message pour une autre conversation (ou chat fermé)
+    if (message.sender !== currentUserId.value) {
+      // increment unread count for that sender
+      const sid = message.sender
+      const next = (unreadMap.value[sid] || 0) + 1
+      unreadMap.value = { ...unreadMap.value, [sid]: next }
+      console.debug('[chat] increment unread for', sid, '->', next)
+    }
   }
 }
 
@@ -373,6 +419,9 @@ function handleClickNewMessages() {
   atBottom.value = true
   // Smooth scroll to bottom
   scrollToBottom(true)
+  // Marquer tout comme lu
+  newMessagesStartIndex.value = null
+  lastReadMessageId.value = messages.value.length ? messages.value[messages.value.length - 1].id : null
 }
 
 function formatTime(dateString) {
@@ -387,6 +436,8 @@ const messagesContainer = ref(null)
 const atBottom = ref(true)
 const hasNewMessages = ref(false)
 const newMessagesCount = ref(0)
+const newMessagesStartIndex = ref(null)
+const lastReadMessageId = ref(null)
 
 function isElementAtBottom(el, threshold = 20) {
   if (!el) return true
@@ -400,8 +451,14 @@ function onMessagesContainerScroll() {
   atBottom.value = isElementAtBottom(messagesContainer.value)
   // If user scrolled to bottom, clear new message indicator
   if (atBottom.value && !wasAtBottom) {
+    console.debug('[chat] user scrolled to bottom — clearing new messages markers', {
+      messagesLength: messages.value.length
+    })
     hasNewMessages.value = false
     newMessagesCount.value = 0
+    newMessagesStartIndex.value = null
+    // marquer le dernier message comme lu
+    lastReadMessageId.value = messages.value.length ? messages.value[messages.value.length - 1].id : null
   }
 }
 
@@ -437,7 +494,7 @@ onMounted(() => {
       socketService.disconnect()
       messages.value = []
       onlineUsers.value = []
-      unreadCount.value = 0
+      unreadMap.value = {}
       selectedUser.value = null
       currentView.value = 'private'
     } else {
@@ -495,6 +552,21 @@ watch(messages, () => {
   padding: 2px 8px;
   border-radius: 12px;
   font-size: 12px;
+}
+
+.new-messages-divider {
+  display: flex;
+  justify-content: center;
+  margin: 8px 0;
+}
+.new-messages-divider .divider-text {
+  background: #ffffff;
+  color: #475569;
+  padding: 6px 12px;
+  border-radius: 9999px;
+  font-size: 12px;
+  font-weight: 600;
+  box-shadow: 0 4px 10px rgba(0,0,0,0.06);
 }
 </style>
 
@@ -685,6 +757,25 @@ watch(messages, () => {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.user-name.unread {
+  font-weight: 700;
+  color: #0f172a; /* darker */
+}
+
+.user-unread-badge {
+  min-width: 18px;
+  height: 18px;
+  background: #ef4444;
+  color: white;
+  border-radius: 9999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  padding: 0 6px;
+  margin-left: 8px;
 }
 
 .online-indicator {
