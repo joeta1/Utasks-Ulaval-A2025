@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, computed, watch } from 'vue'
+import authStore from '../stores/auth'
 import { useRoute, useRouter } from 'vue-router'
 import BoardHeader from '../components/BoardHeader.vue'
 import NewListForm from '../components/NewListForm.vue'
@@ -14,8 +15,11 @@ const router = useRouter()
 // Board ID from route
 const boardId = route.params.id as string
 // Auth check
-const userId = localStorage.getItem('userId')
-if (!userId) router.push('/')
+const userId = computed(() => authStore.currentUser.value?.id)
+if (!userId.value) router.push('/')
+watch(userId, (val) => {
+  if (!val) router.push('/')
+})
 
 // State
 const boardName = ref('')

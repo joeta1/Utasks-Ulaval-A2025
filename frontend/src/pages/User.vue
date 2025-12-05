@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref } from 'vue'
+import authStore from '../stores/auth'
 import { useRouter } from 'vue-router'
 
 const apiBase = import.meta.env.VITE_API_URL || 'http://localhost:3000'
@@ -31,8 +32,7 @@ async function createUser() {
 
     const user = json.data
 
-    localStorage.setItem('userId', user.id)
-    localStorage.setItem('userName', user.username)
+    authStore.setAuth({ id: user.id, username: user.username })
 
     router.push('/boards')
   } catch (err) {

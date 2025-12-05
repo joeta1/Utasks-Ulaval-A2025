@@ -1,5 +1,6 @@
 // Socket.io Service for real-time chat
 import { io } from 'socket.io-client';
+import authStore from '../stores/auth'
 
 const SOCKET_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
@@ -151,7 +152,7 @@ const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
 function getHeaders() {
   const headers = { 'Content-Type': 'application/json' };
-  const token = localStorage.getItem('token');
+  const token = authStore.token.value;
   if (token) {
     headers['Authorization'] = `Bearer ${token}`;
   }

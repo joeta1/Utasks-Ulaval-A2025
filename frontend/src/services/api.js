@@ -3,20 +3,18 @@
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
-// Get auth token from localStorage
+// Get auth token from reactive auth store
+import authStore from '../stores/auth'
+
 function getToken() {
-  return localStorage.getItem('token');
+  return authStore.token.value
 }
 
 // Set auth token to localStorage
-function setToken(token) {
-  localStorage.setItem('token', token);
-}
+// setToken is deprecated in favor of authStore.setAuth
 
 // Remove auth token from localStorage
-function removeToken() {
-  localStorage.removeItem('token');
-}
+// removeToken() is no longer used — the auth store manages localStorage persistence
 
 // Get headers with auth token
 function getHeaders() {
@@ -69,9 +67,7 @@ export const authApi = {
     });
     
     if (data.success && data.data.token) {
-      setToken(data.data.token);
-      localStorage.setItem('userId', data.data.user.id);
-      localStorage.setItem('userName', data.data.user.username);
+      authStore.setAuth({ token: data.data.token, id: data.data.user.id, username: data.data.user.username })
     }
     
     return data;
@@ -84,9 +80,7 @@ export const authApi = {
     });
     
     if (data.success && data.data.token) {
-      setToken(data.data.token);
-      localStorage.setItem('userId', data.data.user.id);
-      localStorage.setItem('userName', data.data.user.username);
+      authStore.setAuth({ token: data.data.token, id: data.data.user.id, username: data.data.user.username })
     }
     
     return data;
@@ -95,12 +89,10 @@ export const authApi = {
   async logout() {
     try {
       await apiFetch('/api/auth/logout', { method: 'POST' });
-    } catch (_e) {
+    } catch {
       // Ignore errors on logout
     }
-    removeToken();
-    localStorage.removeItem('userId');
-    localStorage.removeItem('userName');
+    authStore.clearAuth()
   },
   
   async getCurrentUser() {
@@ -108,13 +100,13 @@ export const authApi = {
   },
   
   isAuthenticated() {
-    return !!getToken();
+    return authStore.isAuthenticated.value
   },
   
   getUser() {
     return {
-      id: localStorage.getItem('userId'),
-      username: localStorage.getItem('userName')
+      id: authStore.currentUser.value?.id,
+      username: authStore.currentUser.value?.username
     };
   }
 };
@@ -128,8 +120,7 @@ export const usersApi = {
     });
     
     if (data.success) {
-      localStorage.setItem('userId', data.data.id);
-      localStorage.setItem('userName', data.data.username);
+      authStore.setAuth({ id: data.data.id, username: data.data.username })
     }
     
     return data;

@@ -127,6 +127,7 @@
 
 <script setup>
 import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
+import authStore from '../stores/auth'
 import { socketService, chatApi } from '../services/socket'
 
 // State
@@ -143,8 +144,8 @@ const unreadCount = ref(0)
 const typingTimeout = ref(null)
 
 // Computed
-const currentUserId = computed(() => localStorage.getItem('userId'))
-const currentUserName = computed(() => localStorage.getItem('userName'))
+const currentUserId = computed(() => authStore.currentUser.value?.id)
+const currentUserName = computed(() => authStore.currentUser.value?.username)
 
 const otherUsers = computed(() => {
   return onlineUsers.value.filter(user => user.userId !== currentUserId.value)
@@ -177,7 +178,7 @@ function selectPrivateChat(user) {
 }
 
 async function connectSocket() {
-  const token = localStorage.getItem('token')
+  const token = authStore.token.value
   if (!token) return
 
   // Nettoyer les anciens listeners avant d'en ajouter de nouveaux
@@ -330,9 +331,25 @@ function scrollToBottom() {
 // Lifecycle
 onMounted(() => {
   // Auto-connect si déjà authentifié
-  if (localStorage.getItem('token')) {
+  if (authStore.token.value) {
     connectSocket()
   }
+
+  // Déconnecter si l'utilisateur se déconnecte
+  watch(() => authStore.token.value, (val) => {
+    if (!val) {
+      socketService.disconnect()
+      messages.value = []
+      onlineUsers.value = []
+      unreadCount.value = 0
+      selectedUser.value = null
+      currentView.value = 'general'
+    } else {
+      // On re-connecte automatiquement si un token revient (login)
+      connectSocket()
+      loadMessages()
+    }
+  })
 })
 
 onUnmounted(() => {

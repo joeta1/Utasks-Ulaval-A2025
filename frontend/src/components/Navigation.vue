@@ -10,13 +10,10 @@ const isDark = ref(
   document.documentElement.classList.contains('dark')
 )
 
-const isAuthenticated = computed(() => {
-  return !!localStorage.getItem('token') || !!localStorage.getItem('userId')
-})
+import authStore from '../stores/auth'
 
-const userName = computed(() => {
-  return localStorage.getItem('userName') || ''
-})
+const isAuthenticated = computed(() => authStore.isAuthenticated.value)
+const userName = computed(() => authStore.currentUser.value?.username || '')
 
 function toggleTheme() {
   isDark.value = !isDark.value

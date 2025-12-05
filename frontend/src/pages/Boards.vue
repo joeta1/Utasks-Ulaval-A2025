@@ -1,15 +1,20 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, computed, watch } from 'vue'
+import authStore from '../stores/auth'
 import { useRouter } from 'vue-router'
 import BoardsItem from '../components/BoardsItem.vue'
 
 const apiBase = import.meta.env.VITE_API_URL || 'http://localhost:3000'
 const router = useRouter()
 
-const userId = localStorage.getItem('userId')
-const userName = localStorage.getItem('userName')
+const userId = computed(() => authStore.currentUser.value?.id)
+const userName = computed(() => authStore.currentUser.value?.username)
 
-if (!userId) router.push('/')
+// redirect to login if the user logs out
+if (!userId.value) router.push('/')
+watch(userId, (val) => {
+  if (!val) router.push('/')
+})
 
 const boards = ref<{ id: string; name: string }[]>([])
 const newBoardName = ref('')
@@ -19,7 +24,7 @@ const editingBoard = ref<{ id: string; name: string } | null>(null)
 async function loadBoards() {
   loading.value = true
   try {
-    const res = await fetch(`${apiBase}/api/boards/user/${userId}`)
+    const res = await fetch(`${apiBase}/api/boards/user/${userId.value}`)
     if (!res.ok) throw new Error('Failed to load boards')
     const json = await res.json()
     boards.value = Array.isArray(json.data) ? json.data : []
@@ -40,7 +45,7 @@ async function createBoard() {
     const res = await fetch(`${apiBase}/api/boards`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json; charset=utf-8' },
-      body: JSON.stringify({ name, userId })
+      body: JSON.stringify({ name, userId: userId.value })
     })
     const json = await res.json()
 
