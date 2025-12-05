@@ -1,6 +1,6 @@
 # UTasks - Manage Your Tasks as You Want! 📋
 
-UTasks is a Trello-like web application built with **Vue 3**, **TypeScript**, and **TailwindCSS**.  
+UTasks is a Trello-like web application built with **Vue 3**, **TypeScript**, and **TailwindCSS** for the frontend, and **Node.js**, **Express**, and **MongoDB** for the backend.  
 It allows users to create an account, log in, and manage their tasks by creating, editing, and organizing boards, lists, and cards through a clean and interactive interface.
 
 ## ✨ Features
@@ -10,6 +10,7 @@ It allows users to create an account, log in, and manage their tasks by creating
 - ✅ Drag & drop cards between lists (desktop & mobile support)
 - ✅ Reorder lists with drag & drop
 - ✅ Sort cards by priority, due date, or both
+- ✅ Card priority levels (High, Medium, Low) with color coding
 - ✅ Dark mode support
 - ✅ Fully responsive design
 
@@ -45,8 +46,8 @@ utasks/
 │   └── package.json
 ├── backend/              # Backend API (Node.js/Express)
 │   ├── src/
-│   │   ├── middleware/   # Authentication middleware
-│   │   ├── models/       # MongoDB models
+│   │   ├── middleware/   # Authentication middleware (JWT)
+│   │   ├── models/       # MongoDB models (User, Board, List, Card)
 │   │   ├── routes/       # API routes
 │   │   └── server.js     # Entry point
 │   └── package.json
@@ -77,8 +78,8 @@ utasks/
    ```
 
 4. **Configure environment variables** in `.env`:
-   ```
-   MONGODB_URI=mongodb://localhost:27017/utasks
+   ```env
+   MONGODB_URI=mongodb+srv://username:password@cluster.mongodb.net/utasks
    JWT_SECRET=your-secret-key
    PORT=3000
    FRONTEND_URL=http://localhost:5173
@@ -106,23 +107,86 @@ utasks/
    cp .env.example .env
    ```
 
-4. **Run the development server**:
+4. **Configure environment variables** in `.env`:
+   ```env
+   VITE_API_URL=http://localhost:3000
+   ```
+
+5. **Run the development server**:
    ```bash
    npm run dev
    ```
 
-5. **Open your browser** at `http://localhost:5173`
+6. **Open your browser** at `http://localhost:5173`
 
-### Available Scripts
+## 📡 API Endpoints
 
-#### Frontend (from `frontend/` folder)
+### Authentication
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/auth/register` | Register a new user |
+| POST | `/api/auth/login` | Login and get JWT token |
+| POST | `/api/auth/logout` | Logout user |
+| GET | `/api/auth/me` | Get current user info |
+
+### Users
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/users/register` | Register user (legacy) |
+| GET | `/api/users/:id` | Get user by ID |
+| DELETE | `/api/users/:id` | Delete user |
+
+### Boards
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/boards` | Create a new board |
+| GET | `/api/boards/:id` | Get board by ID |
+| PUT | `/api/boards/:id` | Update board |
+| DELETE | `/api/boards/:id` | Delete board |
+| GET | `/api/boards/user/:userId` | Get all boards for a user |
+
+### Lists
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/lists` | Create a new list |
+| GET | `/api/lists/:id` | Get list by ID |
+| PUT | `/api/lists/:id` | Update list |
+| DELETE | `/api/lists/:id` | Delete list |
+| GET | `/api/lists/board/:boardId` | Get all lists for a board |
+
+### Cards
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/cards` | Create a new card |
+| GET | `/api/cards/:id` | Get card by ID |
+| PUT | `/api/cards/:id` | Update card |
+| DELETE | `/api/cards/:id` | Delete card |
+| GET | `/api/cards/list/:listId` | Get all cards for a list |
+
+### Health
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/` | Welcome message |
+| GET | `/api/health` | Health check |
+
+## 🔐 Authentication
+
+The API uses JWT (JSON Web Tokens) for authentication. Include the token in the `Authorization` header:
+
+```
+Authorization: Bearer <your-token>
+```
+
+## 📜 Available Scripts
+
+### Frontend (from `frontend/` folder)
 - `npm run dev` - Start development server
 - `npm run build` - Build for production
 - `npm run preview` - Preview production build
 - `npm run lint` - Lint and fix code
 - `npm run format` - Format code with Prettier
 
-#### Backend (from `backend/` folder)
+### Backend (from `backend/` folder)
 - `npm run dev` - Start development server with nodemon
 - `npm start` - Start production server
 - `npm run lint` - Lint and fix code
@@ -135,24 +199,20 @@ Access it from any device (phone, tablet, desktop, laptop)!
 ## 📖 How to Use
 
 ### First Time Setup
-1. On launch, you will be asked to create a username
-2. ⚠️ **Important**: To avoid API conflicts, use unique usernames like:
-   - `JordanEtaba15`
-   - `JordanEtaba16`
-   - `YourName123`
-   - etc.
+1. Open `http://localhost:5173` in your browser
+2. Create an account with username and password
+3. Start creating boards, lists, and cards!
 
-### User Management
-- The **Logout button** temporarily deletes the user from the API database and returns you to the home page
-- This allows you to reuse the same username multiple times without errors during testing
+### Features
+- **Boards**: Create multiple boards to organize different projects
+- **Lists**: Add lists to boards (e.g., "To Do", "In Progress", "Done")
+- **Cards**: Add cards to lists with title, description, due date, and priority
+- **Drag & Drop**: Move cards between lists or reorder lists
+- **Priority**: Set card priority (High 🔴, Medium 🟡, Low 🟢)
+- **Dark Mode**: Toggle between light and dark themes
 
-### API Backend
-The app uses a public REST API provided at:
-- **Base URL**: `https://utasks-026af75f15a3.herokuapp.com/`
-- **Documentation**: [https://utasks-026af75f15a3.herokuapp.com/docs/#/](https://utasks-026af75f15a3.herokuapp.com/docs/#/)
-
-## 👨‍💻 Contributors
-- **Jordan Etaba Bikoun** 
+## 👥 Team
+- GLO3102 - Team 37
 
 ## 📄 License
-This project is part of the GLO-3102 course at Université Laval.
+This project is for educational purposes as part of the GLO3102 course at Université Laval.

@@ -6,7 +6,7 @@ const router = express.Router();
 // POST /api/cards - Create a new card
 router.post('/', async (req, res) => {
   try {
-    const { title, description, listId, position, dueDate, labels } = req.body;
+    const { title, description, listId, position, dueDate, labels, priority, isCompleted } = req.body;
 
     if (!title) {
       return res.status(400).json({
@@ -34,6 +34,8 @@ router.post('/', async (req, res) => {
       description: description || '',
       listId,
       position: cardPosition,
+      priority: priority || 2,
+      isCompleted: isCompleted || false,
       dueDate: dueDate || null,
       labels: labels || []
     });
@@ -82,7 +84,7 @@ router.get('/:id', async (req, res) => {
 // PUT /api/cards/:id - Update card by ID
 router.put('/:id', async (req, res) => {
   try {
-    const { title, description, position, listId, dueDate, labels } = req.body;
+    const { title, description, position, listId, dueDate, labels, priority, isCompleted } = req.body;
     const updateData = { updatedAt: new Date() };
 
     if (title !== undefined) updateData.title = title;
@@ -91,6 +93,8 @@ router.put('/:id', async (req, res) => {
     if (listId !== undefined) updateData.listId = listId;
     if (dueDate !== undefined) updateData.dueDate = dueDate;
     if (labels !== undefined) updateData.labels = labels;
+    if (priority !== undefined) updateData.priority = priority;
+    if (isCompleted !== undefined) updateData.isCompleted = isCompleted;
 
     const card = await Card.findByIdAndUpdate(
       req.params.id,

@@ -23,6 +23,16 @@ const cardSchema = new mongoose.Schema({
     type: Number,
     default: 0
   },
+  priority: {
+    type: Number,
+    default: 2,
+    min: 1,
+    max: 3
+  },
+  isCompleted: {
+    type: Boolean,
+    default: false
+  },
   dueDate: {
     type: Date,
     default: null
