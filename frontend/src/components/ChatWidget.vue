@@ -83,6 +83,13 @@
               <div class="message-content">{{ message.content }}</div>
             </div>
           </div>
+          <!-- Indicateur de nouveaux messages (flottant en bas) -->
+          <div v-if="hasNewMessages" class="new-messages-indicator">
+            <button class="new-messages-btn" @click="handleClickNewMessages">
+              Nouveaux messages
+              <span v-if="newMessagesCount > 1" class="new-messages-badge">{{ newMessagesCount }}</span>
+            </button>
+          </div>
           
           <!-- Indicateur de frappe -->
           <div v-if="typingUsers.length > 0" class="typing-indicator">
@@ -278,6 +285,12 @@ function handleNewPrivateMessage(message) {
           scrollToBottom()
         } else {
           atBottom.value = false
+          // Si l'utilisateur n'est pas en bas et le message vient d'un autre utilisateur,
+          // afficher l'indicateur de nouveaux messages
+          if (message.sender !== currentUserId.value) {
+            hasNewMessages.value = true
+            newMessagesCount.value = (newMessagesCount.value || 0) + 1
+          }
         }
       } else {
         // fallback si la ref n'est pas prête
@@ -354,6 +367,14 @@ function stopTyping() {
   socketService.stopTyping(room)
 }
 
+function handleClickNewMessages() {
+  hasNewMessages.value = false
+  newMessagesCount.value = 0
+  atBottom.value = true
+  // Smooth scroll to bottom
+  scrollToBottom(true)
+}
+
 function formatTime(dateString) {
   const date = new Date(dateString)
   return date.toLocaleTimeString('fr-FR', { 
@@ -364,6 +385,8 @@ function formatTime(dateString) {
 
 const messagesContainer = ref(null)
 const atBottom = ref(true)
+const hasNewMessages = ref(false)
+const newMessagesCount = ref(0)
 
 function isElementAtBottom(el, threshold = 20) {
   if (!el) return true
@@ -373,13 +396,24 @@ function isElementAtBottom(el, threshold = 20) {
 
 function onMessagesContainerScroll() {
   if (!messagesContainer.value) return
+  const wasAtBottom = atBottom.value
   atBottom.value = isElementAtBottom(messagesContainer.value)
+  // If user scrolled to bottom, clear new message indicator
+  if (atBottom.value && !wasAtBottom) {
+    hasNewMessages.value = false
+    newMessagesCount.value = 0
+  }
 }
 
-function scrollToBottom() {
+function scrollToBottom(smooth = false) {
   nextTick(() => {
     if (messagesContainer.value) {
-      messagesContainer.value.scrollTop = messagesContainer.value.scrollHeight
+      const top = messagesContainer.value.scrollHeight
+      if (smooth && typeof messagesContainer.value.scrollTo === 'function') {
+        messagesContainer.value.scrollTo({ top, behavior: 'smooth' })
+      } else {
+        messagesContainer.value.scrollTop = top
+      }
     }
   })
 }
@@ -434,6 +468,35 @@ watch(messages, () => {
   if (atBottom.value) scrollToBottom()
 }, { deep: true })
 </script>
+
+<style scoped>
+.new-messages-indicator {
+  position: absolute;
+  right: 16px;
+  bottom: 72px; /* place above the input area */
+  z-index: 20;
+}
+.new-messages-btn {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: #fff;
+  border: none;
+  padding: 8px 12px;
+  border-radius: 20px;
+  box-shadow: 0 6px 18px rgba(102,126,234,0.25);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+}
+.new-messages-badge {
+  background: rgba(255,255,255,0.15);
+  color: #fff;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 12px;
+}
+</style>
 
 <style scoped>
 .chat-container {
