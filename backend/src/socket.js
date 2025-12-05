@@ -2,6 +2,7 @@ const socketIo = require('socket.io');
 const jwt = require('jsonwebtoken');
 const Message = require('./models/Message');
 const User = require('./models/User');
+const Group = require('./models/Group');
 
 let io;
 
@@ -111,6 +112,58 @@ function initializeSocket(server) {
       } catch (error) {
         console.error('Error sending private message:', error);
         socket.emit('error', { message: 'Failed to send private message' });
+      }
+    });
+
+    // Gestion des messages de groupe
+    socket.on('message:group', async (data) => {
+      try {
+        const { content, groupId } = data;
+        
+        if (!content || content.trim().length === 0) {
+          return socket.emit('error', { message: 'Message content is required' });
+        }
+        
+        if (!groupId) {
+          return socket.emit('error', { message: 'Group ID is required' });
+        }
+        
+        // Vérifier que l'utilisateur est membre du groupe
+        const group = await Group.findById(groupId);
+        if (!group) {
+          return socket.emit('error', { message: 'Group not found' });
+        }
+        
+        if (!group.isMember(socket.userId)) {
+          return socket.emit('error', { message: 'You are not a member of this group' });
+        }
+        
+        const message = new Message({
+          sender: socket.userId,
+          senderUsername: socket.username,
+          group: groupId,
+          content: content.trim(),
+          room: `group-${groupId}`
+        });
+        
+        await message.save();
+        
+        const messageData = {
+          id: message._id,
+          sender: socket.userId,
+          senderUsername: socket.username,
+          group: groupId,
+          content: message.content,
+          room: message.room,
+          createdAt: message.createdAt,
+          isGroup: true
+        };
+        
+        // Envoyer le message à tous les membres du groupe
+        io.to(`group-${groupId}`).emit('message:group:received', messageData);
+      } catch (error) {
+        console.error('Error sending group message:', error);
+        socket.emit('error', { message: 'Failed to send group message' });
       }
     });
 

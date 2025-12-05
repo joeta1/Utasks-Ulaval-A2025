@@ -64,6 +64,16 @@ class SocketService {
     return true;
   }
 
+  // Envoyer un message de groupe
+  sendGroupMessage(content, groupId) {
+    if (!this.socket?.connected) {
+      console.error('Socket not connected');
+      return false;
+    }
+    this.socket.emit('message:group', { content, groupId });
+    return true;
+  }
+
   // Indicateur de frappe (exige une room explicite — conversation privée)
   startTyping(room) {
     if (!room) return;
@@ -184,6 +194,23 @@ export const chatApi = {
     
     if (!response.ok) {
       throw new Error(data.error || 'Failed to fetch private messages');
+    }
+    
+    return data;
+  },
+
+  // Récupérer les messages d'un groupe
+  async getGroupMessages(groupId, limit = 50, before = null) {
+    let url = `${API_BASE}/api/chat/group/${groupId}?limit=${limit}`;
+    if (before) {
+      url += `&before=${encodeURIComponent(before)}`;
+    }
+    
+    const response = await fetch(url, { headers: getHeaders() });
+    const data = await response.json();
+    
+    if (!response.ok) {
+      throw new Error(data.error || 'Failed to fetch group messages');
     }
     
     return data;

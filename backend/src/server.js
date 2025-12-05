@@ -12,6 +12,7 @@ const listRoutes = require('./routes/lists');
 const cardRoutes = require('./routes/cards');
 const healthRoutes = require('./routes/health');
 const chatRoutes = require('./routes/chat');
+const groupRoutes = require('./routes/groups');
 
 const app = express();
 const server = http.createServer(app);
@@ -35,6 +36,7 @@ app.use('/api/boards', boardRoutes);
 app.use('/api/lists', listRoutes);
 app.use('/api/cards', cardRoutes);
 app.use('/api/chat', chatRoutes);
+app.use('/api/groups', groupRoutes);
 
 // Error handling middleware
 app.use((err, req, res, _next) => {

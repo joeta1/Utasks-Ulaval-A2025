@@ -13,7 +13,12 @@ const messageSchema = new mongoose.Schema({
   recipient: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
-    default: null // null = message global, sinon message privé
+    default: null // null = message global ou groupe, sinon message privé
+  },
+  group: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Group',
+    default: null // pour les messages de groupe
   },
   content: {
     type: String,
@@ -38,7 +43,7 @@ const messageSchema = new mongoose.Schema({
   },
   room: {
     type: String,
-    default: null // null or ID of private conversation. General chat disabled.
+    default: null // null or ID of private conversation or group ID
   },
   createdAt: {
     type: Date,
@@ -58,5 +63,6 @@ const messageSchema = new mongoose.Schema({
 // Index pour les requêtes de messages par room
 messageSchema.index({ room: 1, createdAt: -1 });
 messageSchema.index({ sender: 1, recipient: 1, createdAt: -1 });
+messageSchema.index({ group: 1, createdAt: -1 });
 
 module.exports = mongoose.model('Message', messageSchema);

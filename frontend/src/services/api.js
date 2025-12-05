@@ -233,10 +233,53 @@ export const cardsApi = {
   }
 };
 
+// Groups API
+export const groupsApi = {
+  async create(name, description = '', memberIds = []) {
+    return apiFetch('/api/groups', {
+      method: 'POST',
+      body: JSON.stringify({ name, description, memberIds })
+    });
+  },
+  
+  async getAll() {
+    return apiFetch('/api/groups');
+  },
+  
+  async getById(id) {
+    return apiFetch(`/api/groups/${id}`);
+  },
+  
+  async update(id, data) {
+    return apiFetch(`/api/groups/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data)
+    });
+  },
+  
+  async delete(id) {
+    return apiFetch(`/api/groups/${id}`, { method: 'DELETE' });
+  },
+  
+  async addMembers(id, userIds) {
+    return apiFetch(`/api/groups/${id}/members`, {
+      method: 'POST',
+      body: JSON.stringify({ userIds })
+    });
+  },
+  
+  async removeMember(id, userId) {
+    return apiFetch(`/api/groups/${id}/members/${userId}`, {
+      method: 'DELETE'
+    });
+  }
+};
+
 export default {
   auth: authApi,
   users: usersApi,
   boards: boardsApi,
   lists: listsApi,
-  cards: cardsApi
+  cards: cardsApi,
+  groups: groupsApi
 };

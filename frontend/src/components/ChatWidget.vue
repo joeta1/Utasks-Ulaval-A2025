@@ -18,11 +18,11 @@
       <!-- Header -->
       <div class="chat-header">
         <div class="chat-header-info">
-          <h3>{{ selectedUser ? `Chat avec ${selectedUser.username}` : 'Sélectionnez un utilisateur' }}</h3>
+          <h3>{{ headerTitle }}</h3>
           <span class="online-count">{{ onlineUsers.length }} en ligne</span>
         </div>
         <div class="chat-header-actions">
-          <button v-if="selectedUser" @click="goBack" class="btn-icon" title="Retour">
+          <button v-if="selectedUser || selectedGroup" @click="goBack" class="btn-icon" title="Retour">
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <polyline points="15 18 9 12 15 6"></polyline>
             </svg>
@@ -60,6 +60,19 @@
               </svg>
             </button>
           </div>
+          
+          <!-- Bouton créer un groupe -->
+          <div class="create-group-section">
+            <button @click="openGroupModal" class="btn-create-group" title="Créer un groupe">
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+                <circle cx="9" cy="7" r="4"></circle>
+                <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+                <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+              </svg>
+              <span>Nouveau groupe</span>
+            </button>
+          </div>
 
           <div class="user-list-content">
             <!-- Section: Conversations récentes -->
@@ -75,6 +88,29 @@
                   <span class="user-name" :class="{ unread: user.unreadCount > 0 }">{{ user.username }}</span>
                   <span v-if="user.unreadCount > 0" class="user-unread-badge">{{ user.unreadCount }}</span>
                   <span v-if="user.online" class="online-indicator"></span>
+                </button>
+              </div>
+            </div>
+
+            <!-- Section: Groupes -->
+            <div v-if="myGroups.length > 0 && !searchQuery" class="user-section">
+              <h4 class="section-title">Mes groupes</h4>
+              <div v-for="group in myGroups" :key="group.id" class="user-item-wrapper">
+                <button
+                  @click="selectGroupChat(group)"
+                  class="user-item"
+                  :class="{ active: selectedGroup?.id === group.id }"
+                >
+                  <span class="user-avatar group-avatar">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+                      <circle cx="9" cy="7" r="4"></circle>
+                      <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+                      <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+                    </svg>
+                  </span>
+                  <span class="user-name" :class="{ unread: group.unreadCount > 0 }">{{ group.name }}</span>
+                  <span v-if="group.unreadCount > 0" class="user-unread-badge">{{ group.unreadCount }}</span>
                 </button>
               </div>
             </div>
@@ -116,8 +152,8 @@
           </div>
         </div>
 
-        <!-- Zone des messages : affichée seulement si une conversation privée est sélectionnée -->
-        <div v-if="selectedUser" class="messages-container" ref="messagesContainer">
+        <!-- Zone des messages : affichée seulement si une conversation privée ou groupe est sélectionnée -->
+        <div v-if="selectedUser || selectedGroup" class="messages-container" ref="messagesContainer">
           <div v-if="loading" class="loading-messages">
             <span>Chargement des messages...</span>
           </div>
@@ -181,13 +217,13 @@
         <div v-else class="no-conversation-placeholder" style="flex:1;display:flex;align-items:center;justify-content:center;padding:20px;">
           <div style="text-align:center;color:#64748b;">
             <p style="font-weight:600;margin-bottom:6px;">Aucune conversation sélectionnée</p>
-            <p style="font-size:13px;">Choisissez un utilisateur dans la liste pour démarrer une discussion privée.</p>
+            <p style="font-size:13px;">Choisissez un utilisateur ou un groupe dans la liste pour démarrer une discussion.</p>
           </div>
         </div>
       </div>
 
-      <!-- Zone de saisie : affichée seulement si une conversation privée est sélectionnée -->
-      <div v-if="selectedUser" class="chat-footer">
+      <!-- Zone de saisie : affichée seulement si une conversation privée ou groupe est sélectionnée -->
+      <div v-if="selectedUser || selectedGroup" class="chat-footer">
         <form @submit.prevent="sendMessage" class="message-form" ref="emojiWrapper">
           <input 
             v-model="newMessage" 
@@ -210,7 +246,7 @@
             </div>
           </div>
 
-          <button type="submit" class="send-btn" :disabled="!newMessage.trim() || !selectedUser || (selectedUser && selectedUser.userId === currentUserId)">
+          <button type="submit" class="send-btn" :disabled="!newMessage.trim() || (!selectedUser && !selectedGroup)">
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <line x1="22" y1="2" x2="11" y2="13"></line>
               <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
@@ -218,6 +254,13 @@
           </button>
         </form>
       </div>
+      
+      <!-- Group Modal -->
+      <GroupModal 
+        :is-open="showGroupModal"
+        @close="showGroupModal = false"
+        @created="onGroupCreated"
+      />
     </div>
   </div>
 </template>
@@ -226,7 +269,8 @@
 import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import authStore from '../stores/auth'
 import { socketService, chatApi } from '../services/socket'
-import { usersApi } from '../services/api'
+import { usersApi, groupsApi } from '../services/api'
+import GroupModal from './GroupModal.vue'
 
 // State
 const isOpen = ref(false)
@@ -237,14 +281,20 @@ const newMessage = ref('')
 const onlineUsers = ref([])
 const allUsers = ref([])
 const typingUsers = ref([])
-const currentView = ref('private') // only private conversations
+const currentView = ref('private') // private or group
 const selectedUser = ref(null)
+const selectedGroup = ref(null)
 const unreadMap = ref({})
 const unreadCount = computed(() => {
   return Object.values(unreadMap.value).reduce((s, v) => s + (v || 0), 0)
 })
 const typingTimeout = ref(null)
 const currentRoom = ref(null)
+
+// Group state
+const myGroups = ref([])
+const showGroupModal = ref(false)
+const groupUnreadMap = ref({})
 
 // Search state
 const searchQuery = ref('')
@@ -257,6 +307,16 @@ const recentUserIds = ref(new Set())
 // Computed
 const currentUserId = computed(() => authStore.currentUser.value?.id)
 const currentUserName = computed(() => authStore.currentUser.value?.username)
+
+const headerTitle = computed(() => {
+  if (selectedGroup.value) {
+    return `Groupe: ${selectedGroup.value.name}`
+  }
+  if (selectedUser.value) {
+    return `Chat avec ${selectedUser.value.username}`
+  }
+  return 'Sélectionnez une conversation'
+})
 
 const displayedUsers = computed(() => {
   // Merge registered users with online status and exclude the current user
@@ -311,6 +371,7 @@ function selectPrivateChat(user) {
   }
 
   selectedUser.value = user
+  selectedGroup.value = null
   showUserList.value = false
 
   // Ajouter aux conversations récentes
@@ -330,8 +391,35 @@ function selectPrivateChat(user) {
   loadMessages()
 }
 
+function selectGroupChat(group) {
+  // Open a group conversation
+  currentView.value = 'group'
+
+  // Leave previous room if any
+  if (currentRoom.value) {
+    socketService.leaveRoom(currentRoom.value)
+    currentRoom.value = null
+  }
+
+  selectedGroup.value = group
+  selectedUser.value = null
+  showUserList.value = false
+
+  // Mark this group conversation as read
+  if (groupUnreadMap.value[group.id]) {
+    groupUnreadMap.value = { ...groupUnreadMap.value, [group.id]: 0 }
+  }
+
+  // Join the group room
+  const room = `group-${group.id}`
+  currentRoom.value = room
+  socketService.joinRoom(room)
+
+  loadMessages()
+}
+
 function goBack() {
-  // Quitter la conversation privée et revenir à la liste d'utilisateurs
+  // Quitter la conversation privée ou groupe et revenir à la liste
   stopTyping()
   // Leave room
   if (currentRoom.value) {
@@ -340,6 +428,7 @@ function goBack() {
   }
 
   selectedUser.value = null
+  selectedGroup.value = null
   messages.value = []
   loading.value = false
   showUserList.value = true
@@ -354,8 +443,9 @@ async function connectSocket() {
 
   socketService.connect(token)
 
-  // Écouter les événements (private only)
+  // Écouter les événements (private and group)
   socketService.on('message:private:received', handleNewPrivateMessage)
+  socketService.on('message:group:received', handleNewGroupMessage)
   socketService.on('users:online', handleOnlineUsers)
   socketService.on('user:connected', handleUserConnected)
   socketService.on('user:disconnected', handleUserDisconnected)
@@ -389,6 +479,47 @@ async function connectSocket() {
   
   // Charger les conversations récentes depuis le localStorage
   loadRecentConversations()
+  
+  // Charger les groupes de l'utilisateur
+  await loadGroups()
+  
+  // Rejoindre automatiquement tous les groupes
+  myGroups.value.forEach(group => {
+    socketService.joinRoom(`group-${group.id}`)
+  })
+}
+
+async function loadGroups() {
+  try {
+    const res = await groupsApi.getAll()
+    if (res?.success) {
+      myGroups.value = res.data.map(g => ({
+        ...g,
+        unreadCount: groupUnreadMap.value[g.id] || 0
+      }))
+    }
+  } catch (err) {
+    console.error('Failed to load groups:', err)
+  }
+}
+
+function openGroupModal() {
+  showGroupModal.value = true
+}
+
+async function onGroupCreated(group) {
+  // Ajouter le nouveau groupe à la liste
+  myGroups.value.push({
+    ...group,
+    unreadCount: 0
+  })
+  
+  // Rejoindre automatiquement le groupe room
+  const room = `group-${group.id}`
+  socketService.joinRoom(room)
+  
+  // Ouvrir le groupe créé
+  selectGroupChat(group)
 }
 
 async function loadMessages() {
@@ -397,6 +528,8 @@ async function loadMessages() {
     let data
     if (selectedUser.value) {
       data = await chatApi.getPrivateMessages(selectedUser.value.userId)
+    } else if (selectedGroup.value) {
+      data = await chatApi.getGroupMessages(selectedGroup.value.id)
     } else {
       messages.value = []
       loading.value = false
@@ -558,6 +691,57 @@ function handleNewPrivateMessage(message) {
   }
 }
 
+function handleNewGroupMessage(message) {
+  // Vérifier si c'est un message du groupe actuellement ouvert et visible
+  if (selectedGroup.value && isOpen.value) {
+    const expectedRoom = `group-${selectedGroup.value.id}`
+    if (message.room === expectedRoom) {
+      messages.value.push(message)
+      console.debug('[chat] new group message', {
+        id: message.id,
+        sender: message.sender,
+        group: message.group,
+        messagesLength: messages.value.length
+      })
+      // Ne scroller automatiquement que si l'utilisateur est déjà en bas
+      if (messagesContainer.value) {
+        if (isElementAtBottom(messagesContainer.value)) {
+          atBottom.value = true
+          scrollToBottom()
+          lastReadMessageId.value = message.id
+        } else {
+          atBottom.value = false
+          if (message.sender !== currentUserId.value) {
+            if (newMessagesStartIndex.value === null) {
+              newMessagesStartIndex.value = messages.value.length - 1
+            }
+            hasNewMessages.value = true
+            newMessagesCount.value = (newMessagesCount.value || 0) + 1
+          }
+        }
+      } else {
+        scrollToBottom()
+      }
+      return
+    }
+  }
+  
+  // Message pour un autre groupe (ou chat fermé)
+  if (message.sender !== currentUserId.value && message.group) {
+    // Incrémenter le compteur de messages non lus pour ce groupe
+    const gid = message.group
+    const next = (groupUnreadMap.value[gid] || 0) + 1
+    groupUnreadMap.value = { ...groupUnreadMap.value, [gid]: next }
+    console.debug('[chat] increment group unread for', gid, '->', next)
+    
+    // Mettre à jour le compteur dans myGroups
+    const groupIndex = myGroups.value.findIndex(g => g.id === gid)
+    if (groupIndex !== -1) {
+      myGroups.value[groupIndex].unreadCount = next
+    }
+  }
+}
+
 function handleUpdatedPrivateMessage(message) {
   // Mettre à jour le message existant dans la vue si il appartient à la room actuelle
   try {
@@ -623,11 +807,18 @@ function handleError(error) {
 }
 
 function sendMessage() {
-  if (!newMessage.value.trim() || !selectedUser.value) return
-
-  if (selectedUser.value.userId === currentUserId.value) return
-
-  socketService.sendPrivateMessage(newMessage.value.trim(), selectedUser.value.userId)
+  if (!newMessage.value.trim()) return
+  
+  if (selectedUser.value) {
+    // Message privé
+    if (selectedUser.value.userId === currentUserId.value) return
+    socketService.sendPrivateMessage(newMessage.value.trim(), selectedUser.value.userId)
+  } else if (selectedGroup.value) {
+    // Message de groupe
+    socketService.sendGroupMessage(newMessage.value.trim(), selectedGroup.value.id)
+  } else {
+    return
+  }
 
   newMessage.value = ''
   stopTyping()
@@ -1173,6 +1364,37 @@ watch(messages, () => {
 
 .user-avatar.general {
   background: #10b981;
+}
+
+.user-avatar.group-avatar {
+  background: #f59e0b;
+}
+
+.create-group-section {
+  padding: 8px 12px;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.btn-create-group {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.btn-create-group:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
 }
 
 .user-name {

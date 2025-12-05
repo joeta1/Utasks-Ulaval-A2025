@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const auth = require('../middleware/auth');
 const Message = require('../models/Message');
+const Group = require('../models/Group');
 const { getConnectedUsers, getIO } = require('../socket');
 
 // Récupérer l'historique des messages d'une room
@@ -101,6 +102,67 @@ router.get('/private/:userId', auth, async (req, res) => {
     res.status(500).json({
       success: false,
       error: 'Failed to fetch private messages'
+    });
+  }
+});
+
+// Récupérer les messages d'un groupe
+router.get('/group/:groupId', auth, async (req, res) => {
+  try {
+    const { groupId } = req.params;
+    const { limit = 50, before } = req.query;
+    
+    // Vérifier que l'utilisateur est membre du groupe
+    const group = await Group.findById(groupId);
+    if (!group) {
+      return res.status(404).json({
+        success: false,
+        error: 'Groupe non trouvé'
+      });
+    }
+    
+    if (!group.isMember(req.userId)) {
+      return res.status(403).json({
+        success: false,
+        error: 'Vous n\'êtes pas membre de ce groupe'
+      });
+    }
+    
+    const query = { group: groupId, deleted: { $ne: true } };
+    
+    if (before) {
+      query.createdAt = { $lt: new Date(before) };
+    }
+    
+    const messages = await Message.find(query)
+      .sort({ createdAt: -1 })
+      .limit(parseInt(limit))
+      .lean();
+    
+    messages.reverse();
+    
+    res.json({
+      success: true,
+      data: messages.map(msg => ({
+        id: msg._id,
+        sender: msg.sender,
+        senderUsername: msg.senderUsername,
+        content: msg.content,
+        group: msg.group,
+        room: msg.room,
+        edited: msg.edited || false,
+        editedAt: msg.editedAt || null,
+        deleted: msg.deleted || false,
+        deletedAt: msg.deletedAt || null,
+        createdAt: msg.createdAt,
+        isGroup: true
+      }))
+    });
+  } catch (error) {
+    console.error('Error fetching group messages:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch group messages'
     });
   }
 });
