@@ -23,7 +23,15 @@ function toggleTheme() {
 
 async function logout() {
   await authApi.logout()
+  // Ensure store is cleared and force a full reload so browser autofill doesn't retain values
+  try {
+    authStore.clearAuth()
+  } catch (e) {
+    // ignore
+  }
   router.push('/login')
+  // reload the page to clear any browser-autofilled inputs
+  window.location.reload()
 }
 </script>
 

@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { authApi } from '../services/api'
+import authStore from '../stores/auth'
 
 const router = useRouter()
 
@@ -17,6 +18,38 @@ const toggleMode = () => {
   isLoginMode.value = !isLoginMode.value
   error.value = ''
 }
+
+onMounted(() => {
+  // Clear any pre-filled values (browser autofill or leftover state)
+  username.value = ''
+  password.value = ''
+  confirmPassword.value = ''
+  email.value = ''
+
+  // Ensure auth store is synced with localStorage (in case)
+  authStore.initAuthFromStorage()
+})
+
+// Refs to input elements to apply readonly trick against browser autofill
+const usernameInput = ref(null)
+const passwordInput = ref(null)
+
+onMounted(async () => {
+  // Apply readonly to prevent some browsers from autofilling before Vue binds
+  if (usernameInput.value) usernameInput.value.readOnly = true
+  if (passwordInput.value) passwordInput.value.readOnly = true
+
+  // Wait a tick then remove readonly so user can type — keeps inputs empty if autofill tried
+  await nextTick()
+  setTimeout(() => {
+    try {
+      if (usernameInput.value) usernameInput.value.readOnly = false
+      if (passwordInput.value) passwordInput.value.readOnly = false
+    } catch (e) {
+      // ignore
+    }
+  }, 50)
+})
 
 const isFormValid = computed(() => {
   if (isLoginMode.value) {
@@ -79,7 +112,10 @@ async function handleSubmit() {
 
       <!-- Login/Register Form -->
       <div class="bg-white dark:bg-slate-800 rounded-2xl shadow-xl p-8">
-        <form @submit.prevent="handleSubmit" class="space-y-5">
+        <form @submit.prevent="handleSubmit" class="space-y-5" autocomplete="off">
+          <!-- Hidden dummy inputs to reduce browser autofill on login fields -->
+          <input type="text" name="fake-username" autocomplete="username" style="position:absolute; left:-9999px; width:1px; height:1px; opacity:0;" />
+          <input type="password" name="fake-password" autocomplete="new-password" style="position:absolute; left:-9999px; width:1px; height:1px; opacity:0;" />
           <!-- Error message -->
           <div v-if="error" class="bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400 p-3 rounded-lg text-sm">
             {{ error }}
@@ -92,9 +128,11 @@ async function handleSubmit() {
             </label>
             <input 
               id="username" 
+              ref="usernameInput"
+              name="user-field"
               v-model="username" 
               type="text" 
-              autocomplete="username"
+              autocomplete="off"
               placeholder="Enter your username"
               class="w-full px-4 py-3 border border-gray-300 dark:border-slate-600 rounded-xl dark:bg-slate-700 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
               required
@@ -123,9 +161,11 @@ async function handleSubmit() {
             </label>
             <input 
               id="password" 
+              ref="passwordInput"
+              name="pass-field"
               v-model="password" 
               type="password" 
-              autocomplete="current-password"
+              autocomplete="new-password"
               placeholder="Enter your password"
               class="w-full px-4 py-3 border border-gray-300 dark:border-slate-600 rounded-xl dark:bg-slate-700 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
               required
