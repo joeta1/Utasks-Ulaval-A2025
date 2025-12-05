@@ -115,9 +115,10 @@
 
       <!-- Zone de saisie : affichée seulement si une conversation privée est sélectionnée -->
       <div v-if="selectedUser" class="chat-footer">
-        <form @submit.prevent="sendMessage" class="message-form">
+        <form @submit.prevent="sendMessage" class="message-form" ref="emojiWrapper">
           <input 
             v-model="newMessage" 
+            ref="messageInput"
             type="text" 
             placeholder="Tapez votre message..."
             @input="handleTyping"
@@ -125,6 +126,17 @@
             class="message-input"
             maxlength="1000"
           />
+
+          <div class="emoji-area">
+            <button type="button" class="emoji-btn" @click.stop="toggleEmojiPicker" title="Émojis">
+              😊
+            </button>
+
+            <div v-if="showEmojiPicker" class="emoji-picker" @click.stop>
+              <button v-for="(e, i) in emojis" :key="i" type="button" class="emoji-item" @click="insertEmoji(e)">{{ e }}</button>
+            </div>
+          </div>
+
           <button type="submit" class="send-btn" :disabled="!newMessage.trim() || !selectedUser || (selectedUser && selectedUser.userId === currentUserId)">
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <line x1="22" y1="2" x2="11" y2="13"></line>
@@ -403,6 +415,46 @@ function handleTyping() {
   }, 2000)
 }
 
+// Emoji picker state and helpers
+const emojis = ['😀','😂','😊','😍','😢','👍','🎉','🔥','🚀','🤝']
+const showEmojiPicker = ref(false)
+const messageInput = ref(null)
+const emojiWrapper = ref(null)
+
+function toggleEmojiPicker() {
+  showEmojiPicker.value = !showEmojiPicker.value
+  if (showEmojiPicker.value) {
+    // focus input so selection positions are available
+    nextTick(() => messageInput.value && messageInput.value.focus())
+  }
+}
+
+function insertEmoji(emoji) {
+  const input = messageInput.value
+  if (input && typeof input.selectionStart === 'number') {
+    const start = input.selectionStart
+    const end = input.selectionEnd
+    const val = newMessage.value || ''
+    newMessage.value = val.slice(0, start) + emoji + val.slice(end)
+    nextTick(() => {
+      const pos = start + emoji.length
+      try { input.setSelectionRange(pos, pos) } catch (e) { /* ignore */ }
+      input.focus()
+    })
+  } else {
+    newMessage.value = (newMessage.value || '') + emoji
+    nextTick(() => messageInput.value && messageInput.value.focus())
+  }
+  showEmojiPicker.value = false
+}
+
+function hideIfClickedOutside(e) {
+  if (!emojiWrapper.value) return
+  if (!emojiWrapper.value.contains(e.target)) {
+    showEmojiPicker.value = false
+  }
+}
+
 function stopTyping() {
   if (typingTimeout.value) {
     clearTimeout(typingTimeout.value)
@@ -505,6 +557,11 @@ onMounted(() => {
   })
 })
 
+// Listen for clicks outside the emoji area to hide the picker
+onMounted(() => {
+  document.addEventListener('click', hideIfClickedOutside)
+})
+
 onUnmounted(() => {
   socketService.removeAllListeners()
   if (typingTimeout.value) {
@@ -518,6 +575,8 @@ onUnmounted(() => {
   if (messagesContainer.value) {
     messagesContainer.value.removeEventListener('scroll', onMessagesContainerScroll)
   }
+  // Remove outside-click listener for emoji picker
+  document.removeEventListener('click', hideIfClickedOutside)
 })
 
 // Watchers
@@ -872,6 +931,49 @@ watch(messages, () => {
 .message-form {
   display: flex;
   gap: 8px;
+}
+
+.emoji-area {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.emoji-btn {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 1px solid #e2e8f0;
+  background: white;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+}
+
+.emoji-picker {
+  position: absolute;
+  bottom: 48px;
+  right: 0;
+  background: white;
+  border: 1px solid #e2e8f0;
+  padding: 8px;
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.12);
+  display: grid;
+  grid-template-columns: repeat(5, 28px);
+  gap: 6px;
+  z-index: 50;
+}
+
+.emoji-item {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  font-size: 18px;
+  padding: 4px;
+  line-height: 1;
 }
 
 .message-input {
