@@ -55,9 +55,11 @@ router.get('/private/:userId', auth, async (req, res) => {
   try {
     const { userId } = req.params;
     const { limit = 50, before } = req.query;
-    const currentUserId = req.user.userId;
+    // req.userId est défini par le middleware d'auth et contient l'ObjectId
+    const currentUserIdObj = req.userId;
+    const currentUserId = currentUserIdObj.toString();
 
-    // Créer l'ID de room pour la conversation privée
+    // Créer l'ID de room pour la conversation privée (utiliser les chaînes)
     const roomId = [currentUserId, userId].sort().join('-');
 
     const query = { room: roomId };
@@ -115,7 +117,8 @@ router.get('/users/online', auth, async (req, res) => {
 // Récupérer les conversations récentes de l'utilisateur
 router.get('/conversations', auth, async (req, res) => {
   try {
-    const currentUserId = req.user.userId;
+    // Utiliser req.userId (ObjectId) pour les requêtes MongoDB
+    const currentUserId = req.userId;
 
     // Trouver les derniers messages privés où l'utilisateur est impliqué
     const conversations = await Message.aggregate([
