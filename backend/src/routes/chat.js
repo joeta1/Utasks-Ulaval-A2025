@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const auth = require('../middleware/auth');
 const Message = require('../models/Message');
-const { getConnectedUsers } = require('../socket');
+const { getConnectedUsers, getIO } = require('../socket');
 
 // Récupérer l'historique des messages d'une room
 router.get('/messages/:room', auth, async (req, res) => {
@@ -38,6 +38,8 @@ router.get('/messages/:room', auth, async (req, res) => {
         content: msg.content,
         room: msg.room,
         recipient: msg.recipient,
+        edited: msg.edited || false,
+        editedAt: msg.editedAt || null,
         createdAt: msg.createdAt
       }))
     });
@@ -84,6 +86,8 @@ router.get('/private/:userId', auth, async (req, res) => {
         content: msg.content,
         room: msg.room,
         recipient: msg.recipient,
+        edited: msg.edited || false,
+        editedAt: msg.editedAt || null,
         createdAt: msg.createdAt,
         isPrivate: true
       }))
@@ -171,3 +175,58 @@ router.get('/conversations', auth, async (req, res) => {
 });
 
 module.exports = router;
+
+// Endpoint pour éditer un message (seul l'expéditeur peut éditer)
+router.put('/messages/:id', auth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { content } = req.body;
+    if (!content || typeof content !== 'string' || !content.trim()) {
+      return res.status(400).json({ success: false, error: 'Content is required' });
+    }
+
+    const message = await Message.findById(id);
+    if (!message) return res.status(404).json({ success: false, error: 'Message not found' });
+
+    // Vérifier que c'est bien l'expéditeur
+    if (message.sender.toString() !== req.userId.toString()) {
+      return res.status(403).json({ success: false, error: 'Not authorized to edit this message' });
+    }
+
+    message.content = content.trim();
+    message.edited = true;
+    message.editedAt = new Date();
+    await message.save();
+
+    const messageData = {
+      id: message._id,
+      sender: message.sender.toString(),
+      senderUsername: message.senderUsername,
+      recipient: message.recipient ? message.recipient.toString() : null,
+      content: message.content,
+      room: message.room,
+      createdAt: message.createdAt,
+      edited: message.edited,
+      editedAt: message.editedAt,
+      isPrivate: !!message.recipient
+    };
+
+    try {
+      // Émettre l'événement de mise à jour aux membres de la room privée
+      const io = getIO();
+      if (message.room) {
+        io.to(message.room).emit('message:private:updated', messageData);
+      } else {
+        // fallback: émettre au destinataire et à l'expéditeur
+        io.emit('message:private:updated', messageData);
+      }
+    } catch (emitErr) {
+      console.error('Failed to emit message update:', emitErr);
+    }
+
+    res.json({ success: true, data: messageData });
+  } catch (error) {
+    console.error('Error updating message:', error);
+    res.status(500).json({ success: false, error: 'Failed to update message' });
+  }
+});

@@ -85,8 +85,23 @@
                 <div class="message-header">
                   <span class="message-sender">{{ message.senderUsername }}</span>
                   <span class="message-time">{{ formatTime(message.createdAt) }}</span>
+                  <button v-if="message.sender === currentUserId" @click="startEdit(message)" class="btn-icon" title="Éditer" style="margin-left:6px;">
+                    ✏️
+                  </button>
                 </div>
-                <div class="message-content">{{ message.content }}</div>
+                <div class="message-content">
+                  <template v-if="editingMessageId === (message.id || message._id)">
+                    <div style="display:flex;gap:8px;align-items:center;">
+                      <input id="edit-input-{{ message.id || message._id }}" v-model="editingContent" class="message-input" style="flex:1;padding:6px 10px;" />
+                      <button type="button" class="send-btn" @click="submitEdit(message)">OK</button>
+                      <button type="button" class="btn-icon" @click="cancelEdit">✖️</button>
+                    </div>
+                  </template>
+                  <template v-else>
+                    <span>{{ message.content }}</span>
+                    <small v-if="message.edited" style="margin-left:8px;color:#6b7280;font-style:italic">(modifié)</small>
+                  </template>
+                </div>
               </div>
             </div>
           </div>
@@ -255,6 +270,7 @@ async function connectSocket() {
   socketService.on('user:connected', handleUserConnected)
   socketService.on('user:disconnected', handleUserDisconnected)
   socketService.on('typing:update', handleTypingUpdate)
+  socketService.on('message:private:updated', handleUpdatedPrivateMessage)
   socketService.on('error', handleError)
   // Rejoindre la room actuelle si une conversation est déjà sélectionnée
   if (selectedUser.value) {
@@ -362,6 +378,26 @@ function handleNewPrivateMessage(message) {
   }
 }
 
+function handleUpdatedPrivateMessage(message) {
+  // Mettre à jour le message existant dans la vue si il appartient à la room actuelle
+  try {
+    if (selectedUser.value) {
+      const expectedRoom = [currentUserId.value, selectedUser.value.userId].sort().join('-')
+      if (message.room === expectedRoom) {
+        const idx = messages.value.findIndex(m => (m.id || m._id) === (message.id || message._id))
+        if (idx !== -1) {
+          // merger les champs importants
+          messages.value[idx].content = message.content
+          messages.value[idx].edited = true
+          messages.value[idx].editedAt = message.editedAt || new Date().toISOString()
+        }
+      }
+    }
+  } catch (err) {
+    console.error('Error handling updated private message', err)
+  }
+}
+
 function handleOnlineUsers(users) {
   onlineUsers.value = users
 }
@@ -420,6 +456,48 @@ const emojis = ['😀','😂','😊','😍','😢','👍','🎉','🔥','🚀','
 const showEmojiPicker = ref(false)
 const messageInput = ref(null)
 const emojiWrapper = ref(null)
+
+// Edition de message
+const editingMessageId = ref(null)
+const editingContent = ref('')
+
+function startEdit(message) {
+  if (!message || message.sender !== currentUserId.value) return
+  editingMessageId.value = message.id || message._id
+  editingContent.value = message.content
+  // focus after next tick if desired
+  nextTick(() => {
+    const el = document.getElementById(`edit-input-${editingMessageId.value}`)
+    if (el) el.focus()
+  })
+}
+
+function cancelEdit() {
+  editingMessageId.value = null
+  editingContent.value = ''
+}
+
+async function submitEdit(message) {
+  if (!editingMessageId.value) return
+  const trimmed = (editingContent.value || '').trim()
+  if (!trimmed) return
+  try {
+    const res = await chatApi.updateMessage(editingMessageId.value, trimmed)
+    if (res?.success && res.data) {
+      // Update local message
+      const idx = messages.value.findIndex(m => (m.id || m._id) === editingMessageId.value)
+      if (idx !== -1) {
+        messages.value[idx].content = res.data.content
+        messages.value[idx].edited = true
+        messages.value[idx].editedAt = res.data.editedAt
+      }
+      // clear editing state
+      cancelEdit()
+    }
+  } catch (err) {
+    console.error('Failed to update message', err)
+  }
+}
 
 function toggleEmojiPicker() {
   showEmojiPicker.value = !showEmojiPicker.value

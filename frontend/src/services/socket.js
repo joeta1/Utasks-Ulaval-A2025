@@ -228,4 +228,18 @@ export const chatApi = {
     
     return data;
   }
+  ,
+  // Mettre à jour un message existant
+  async updateMessage(messageId, content) {
+    const response = await fetch(`${API_BASE}/api/chat/messages/${messageId}`, {
+      method: 'PUT',
+      headers: getHeaders(),
+      body: JSON.stringify({ content })
+    });
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.error || 'Failed to update message');
+    }
+    return data;
+  }
 };

@@ -20,6 +20,14 @@ const messageSchema = new mongoose.Schema({
     required: true,
     maxlength: 1000
   },
+  edited: {
+    type: Boolean,
+    default: false
+  },
+  editedAt: {
+    type: Date,
+    default: null
+  },
   room: {
     type: String,
     default: null // null or ID of private conversation. General chat disabled.
