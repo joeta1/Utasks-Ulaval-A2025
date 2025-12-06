@@ -2,7 +2,7 @@
   <div v-if="isOpen" class="modal-overlay" @click="closeModal">
     <div class="modal-container" @click.stop>
       <div class="modal-header">
-        <h3>{{ isEditing ? 'Modifier le groupe' : 'Créer un nouveau groupe' }}</h3>
+        <h3>{{ isEditing ? 'Edit group' : 'Create new group' }}</h3>
         <button @click="closeModal" class="btn-close">
           <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <line x1="18" y1="6" x2="6" y2="18"></line>
@@ -13,12 +13,12 @@
       
       <div class="modal-body">
         <div class="form-group">
-          <label for="group-name">Nom du groupe *</label>
+          <label for="group-name">Group name *</label>
           <input 
             id="group-name"
             v-model="groupName" 
             type="text" 
-            placeholder="Ex: Équipe développement"
+            placeholder="Ex: Development team"
             maxlength="100"
             class="form-input"
             @keyup.enter="handleSubmit"
@@ -30,7 +30,7 @@
           <textarea 
             id="group-description"
             v-model="groupDescription" 
-            placeholder="Décrivez le groupe (optionnel)"
+            placeholder="Describe the group (optional)"
             maxlength="500"
             rows="3"
             class="form-textarea"
@@ -38,18 +38,18 @@
         </div>
         
         <div v-if="!isEditing" class="form-group">
-          <label>Membres (optionnel)</label>
+          <label>Members (optional)</label>
           <div class="search-members">
             <input 
               v-model="memberSearch" 
               type="text" 
-              placeholder="Rechercher des utilisateurs..."
+              placeholder="Search for users..."
               class="form-input"
               @input="onSearchMembers"
             />
           </div>
           
-          <!-- Liste des membres sélectionnés -->
+          <!-- Selected members list -->
           <div v-if="selectedMembers.length > 0" class="selected-members">
             <div v-for="member in selectedMembers" :key="member.id" class="member-chip">
               <span>{{ member.username }}</span>
@@ -57,7 +57,7 @@
             </div>
           </div>
           
-          <!-- Résultats de recherche -->
+          <!-- Search results -->
           <div v-if="memberSearchResults.length > 0" class="search-results">
             <button 
               v-for="user in memberSearchResults" 
@@ -79,10 +79,10 @@
       </div>
       
       <div class="modal-footer">
-        <button @click="closeModal" class="btn btn-secondary">Annuler</button>
+        <button @click="closeModal" class="btn btn-secondary">Cancel</button>
         <button @click="handleSubmit" class="btn btn-primary" :disabled="loading || !groupName.trim()">
-          <span v-if="loading">Traitement...</span>
-          <span v-else>{{ isEditing ? 'Modifier' : 'Créer' }}</span>
+          <span v-if="loading">Processing...</span>
+          <span v-else>{{ isEditing ? 'Edit' : 'Create' }}</span>
         </button>
       </div>
     </div>
@@ -97,7 +97,7 @@ import authStore from '../stores/auth'
 
 const props = defineProps({
   isOpen: Boolean,
-  group: Object // Si fourni, on est en mode édition
+  group: Object
 })
 
 const emit = defineEmits(['close', 'created', 'updated'])
@@ -115,12 +115,10 @@ const error = ref('')
 
 const currentUserId = computed(() => authStore.currentUser.value?.id)
 
-// Charger les données du groupe en mode édition
 watch(() => props.group, (newGroup) => {
   if (newGroup) {
     groupName.value = newGroup.name || ''
     groupDescription.value = newGroup.description || ''
-    // Ne pas permettre de modifier les membres en édition (pour simplifier)
   } else {
     resetForm()
   }
@@ -154,7 +152,7 @@ function onSearchMembers() {
     try {
       const res = await usersApi.search(memberSearch.value)
       if (res?.success) {
-        // Exclure l'utilisateur actuel et les membres déjà sélectionnés
+        // Exclude current user and already selected members
         memberSearchResults.value = res.data.filter(u => 
           u.id !== currentUserId.value && !selectedMembers.value.some(m => m.id === u.id)
         )
@@ -178,7 +176,7 @@ function removeMember(userId) {
 
 async function handleSubmit() {
   if (!groupName.value.trim()) {
-    error.value = 'Le nom du groupe est requis'
+    error.value = 'Group name is required'
     return
   }
   
@@ -187,7 +185,7 @@ async function handleSubmit() {
   
   try {
     if (isEditing.value) {
-      // Mode édition
+      // Edit mode
       const res = await groupsApi.update(props.group.id, {
         name: groupName.value.trim(),
         description: groupDescription.value.trim()
@@ -198,7 +196,7 @@ async function handleSubmit() {
         closeModal()
       }
     } else {
-      // Mode création
+      // Create mode
       const memberIds = selectedMembers.value.map(m => m.id)
       const res = await groupsApi.create(
         groupName.value.trim(),
@@ -213,7 +211,7 @@ async function handleSubmit() {
     }
   } catch (err) {
     console.error('Failed to save group:', err)
-    error.value = err.message || 'Une erreur est survenue'
+    error.value = err.message || 'An error occurred'
   } finally {
     loading.value = false
   }

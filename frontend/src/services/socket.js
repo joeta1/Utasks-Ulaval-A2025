@@ -10,7 +10,7 @@ class SocketService {
     this.listeners = new Map();
   }
 
-  // Connecter au serveur Socket.io
+  // Connect to the socket server
   connect(token) {
     if (this.socket?.connected) {
       return this.socket;
@@ -39,7 +39,7 @@ class SocketService {
     return this.socket;
   }
 
-  // Déconnecter
+  // DDisconnect
   disconnect() {
     if (this.socket) {
       this.socket.disconnect();
@@ -47,14 +47,14 @@ class SocketService {
     }
   }
 
-  // Vérifier si connecté
+  // Check if connected
   isConnected() {
     return this.socket?.connected || false;
   }
 
   // NOTE: General chat disabled on server; use sendPrivateMessage instead.
 
-  // Envoyer un message privé
+  // Send a private message
   sendPrivateMessage(content, recipientId) {
     if (!this.socket?.connected) {
       console.error('Socket not connected');
@@ -64,7 +64,7 @@ class SocketService {
     return true;
   }
 
-  // Envoyer un message de groupe
+  // Send a group message
   sendGroupMessage(content, groupId) {
     if (!this.socket?.connected) {
       console.error('Socket not connected');
@@ -74,7 +74,7 @@ class SocketService {
     return true;
   }
 
-  // Indicateur de frappe (exige une room explicite — conversation privée)
+  // Typing indicator (requires an explicit room — private conversation)
   startTyping(room) {
     if (!room) return;
     if (this.socket?.connected) {
@@ -89,24 +89,24 @@ class SocketService {
     }
   }
 
-  // Rejoindre une room
+  // Join a room
   joinRoom(roomId) {
     if (this.socket?.connected) {
       this.socket.emit('room:join', roomId);
     }
   }
 
-  // Quitter une room
+  // Leave a room
   leaveRoom(roomId) {
     if (this.socket?.connected) {
       this.socket.emit('room:leave', roomId);
     }
   }
 
-  // Écouter les événements
+  // Listen to an event
   on(event, callback) {
     if (this.socket) {
-      // Supprimer les anciens listeners pour cet événement avant d'en ajouter un nouveau
+      // Remove old listeners for this event before adding a new one
       if (this.listeners.has(event)) {
         this.listeners.get(event).forEach(cb => {
           this.socket.off(event, cb);
@@ -116,7 +116,7 @@ class SocketService {
       
       this.socket.on(event, callback);
       
-      // Stocker le listener pour pouvoir le supprimer plus tard
+      // Store the listener so we can remove it later
       if (!this.listeners.has(event)) {
         this.listeners.set(event, []);
       }
@@ -124,7 +124,7 @@ class SocketService {
     }
   }
 
-  // Arrêter d'écouter un événement
+  // Stop listening to an event
   off(event, callback) {
     if (this.socket) {
       if (callback) {
@@ -135,7 +135,7 @@ class SocketService {
     }
   }
 
-  // Supprimer tous les listeners
+  // Remove all listeners
   removeAllListeners() {
     if (this.socket) {
       this.listeners.forEach((callbacks, event) => {
@@ -151,7 +151,7 @@ class SocketService {
 // Singleton instance
 export const socketService = new SocketService();
 
-// Chat API pour récupérer l'historique
+// Chat API Service for RESTful calls
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
 function getHeaders() {
@@ -164,7 +164,7 @@ function getHeaders() {
 }
 
 export const chatApi = {
-  // Récupérer les messages d'une room
+  // Get messages from a room
   async getMessages(room = null, limit = 50, before = null) {
     if (!room) throw new Error('General chat is disabled; provide a private user id via getPrivateMessages')
     let url = `${API_BASE}/api/chat/messages/${room}?limit=${limit}`;
@@ -182,7 +182,7 @@ export const chatApi = {
     return data;
   },
 
-  // Récupérer les messages privés
+  // Get private messages
   async getPrivateMessages(userId, limit = 50, before = null) {
     let url = `${API_BASE}/api/chat/private/${userId}?limit=${limit}`;
     if (before) {
@@ -199,7 +199,7 @@ export const chatApi = {
     return data;
   },
 
-  // Récupérer les messages d'un groupe
+  // Get group messages
   async getGroupMessages(groupId, limit = 50, before = null) {
     let url = `${API_BASE}/api/chat/group/${groupId}?limit=${limit}`;
     if (before) {
@@ -216,7 +216,7 @@ export const chatApi = {
     return data;
   },
 
-  // Récupérer les utilisateurs en ligne
+  // Get online users
   async getOnlineUsers() {
     const response = await fetch(`${API_BASE}/api/chat/users/online`, {
       headers: getHeaders()
@@ -230,7 +230,7 @@ export const chatApi = {
     return data;
   },
 
-  // Récupérer tous les utilisateurs enregistrés
+  // Get all registered users
   async getAllUsers() {
     const response = await fetch(`${API_BASE}/api/users`, { headers: getHeaders() });
     const data = await response.json();
@@ -242,7 +242,6 @@ export const chatApi = {
     return data;
   },
 
-  // Récupérer les conversations récentes
   async getConversations() {
     const response = await fetch(`${API_BASE}/api/chat/conversations`, {
       headers: getHeaders()
@@ -256,7 +255,7 @@ export const chatApi = {
     return data;
   }
   ,
-  // Mettre à jour un message existant
+  // Update an existing message
   async updateMessage(messageId, content) {
     const response = await fetch(`${API_BASE}/api/chat/messages/${messageId}`, {
       method: 'PUT',
@@ -270,7 +269,7 @@ export const chatApi = {
     return data;
   }
   ,
-  // Supprimer (soft-delete) un message
+  // Delete (soft-delete) a message
   async deleteMessage(messageId) {
     const response = await fetch(`${API_BASE}/api/chat/messages/${messageId}`, {
       method: 'DELETE',

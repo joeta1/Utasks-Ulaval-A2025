@@ -19,15 +19,15 @@
       <div class="chat-header">
         <div class="chat-header-info">
           <h3>{{ headerTitle }}</h3>
-          <span class="online-count">{{ onlineUsers.length }} en ligne</span>
+          <span class="online-count">{{ onlineUsers.length }} online</span>
         </div>
         <div class="chat-header-actions">
-          <button v-if="selectedUser || selectedGroup" @click="goBack" class="btn-icon" title="Retour">
+          <button v-if="selectedUser || selectedGroup" @click="goBack" class="btn-icon" title="Back">
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <polyline points="15 18 9 12 15 6"></polyline>
             </svg>
           </button>
-          <button v-if="selectedGroup" @click="showGroupMembersModal" class="btn-icon" title="Voir les membres">
+          <button v-if="selectedGroup" @click="showGroupMembersModal" class="btn-icon" title="View members">
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
               <circle cx="9" cy="7" r="4"></circle>
@@ -35,7 +35,7 @@
               <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
             </svg>
           </button>
-          <button v-if="selectedGroup && isGroupCreator" @click="deleteGroup" class="btn-icon btn-delete" title="Supprimer le groupe">
+          <button v-if="selectedGroup && isGroupCreator" @click="deleteGroup" class="btn-icon btn-delete" title="Delete group">
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <polyline points="3 6 5 6 21 6"></polyline>
               <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
@@ -43,7 +43,7 @@
               <line x1="14" y1="11" x2="14" y2="17"></line>
             </svg>
           </button>
-          <button @click="toggleChat" class="btn-icon btn-close" title="Fermer">
+          <button @click="toggleChat" class="btn-icon btn-close" title="Close">
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <line x1="18" y1="6" x2="6" y2="18"></line>
               <line x1="6" y1="6" x2="18" y2="18"></line>
@@ -54,22 +54,22 @@
 
       <!-- Contenu principal -->
       <div class="chat-body">
-        <!-- Liste des utilisateurs (sidebar) -->
+        <!-- User list (sidebar) -->
         <div v-if="showUserList" class="user-list">
-          <!-- Barre de recherche -->
+          <!-- Search bar -->
           <div class="search-bar">
             <input 
               v-model="searchQuery"
               @input="onSearchInput"
               type="text" 
-              placeholder="Rechercher un utilisateur..."
+              placeholder="Search for a user..."
               class="search-input"
             />
             <svg v-if="!searchQuery" class="search-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <circle cx="11" cy="11" r="8"></circle>
               <path d="m21 21-4.35-4.35"></path>
             </svg>
-            <button v-else @click="clearSearch" class="clear-search-btn" title="Effacer">
+            <button v-else @click="clearSearch" class="clear-search-btn" title="Clear">
               <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <line x1="18" y1="6" x2="6" y2="18"></line>
                 <line x1="6" y1="6" x2="18" y2="18"></line>
@@ -77,23 +77,23 @@
             </button>
           </div>
           
-          <!-- Bouton créer un groupe -->
+          <!-- Create group button -->
           <div class="create-group-section">
-            <button @click="openGroupModal" class="btn-create-group" title="Créer un groupe">
+            <button @click="openGroupModal" class="btn-create-group" title="Create group">
               <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
                 <circle cx="9" cy="7" r="4"></circle>
                 <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
                 <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
               </svg>
-              <span>Nouveau groupe</span>
+              <span>New group</span>
             </button>
           </div>
 
           <div class="user-list-content">
-            <!-- Section: Conversations récentes -->
+            <!-- Section: Recent conversations -->
             <div v-if="recentConversations.length > 0 && !searchQuery" class="user-section">
-              <h4 class="section-title">Conversations récentes</h4>
+              <h4 class="section-title">Recent conversations</h4>
               <div v-for="user in recentConversations" :key="user.userId" class="user-item-wrapper">
                 <button
                   @click="selectPrivateChat(user)"
@@ -108,9 +108,9 @@
               </div>
             </div>
 
-            <!-- Section: Groupes -->
+            <!-- Section: Groups -->
             <div v-if="myGroups.length > 0 && !searchQuery" class="user-section">
-              <h4 class="section-title">Mes groupes</h4>
+              <h4 class="section-title">My groups</h4>
               <div v-for="group in myGroups" :key="group.id" class="user-item-wrapper">
                 <button
                   @click="selectGroupChat(group)"
@@ -131,14 +131,14 @@
               </div>
             </div>
 
-            <!-- Section: Résultats de recherche -->
+            <!-- Section: Search results -->
             <div v-if="searchQuery && searchQuery.length >= minSearchLength" class="user-section">
-              <h4 class="section-title">Résultats de recherche</h4>
+              <h4 class="section-title">Search results</h4>
               <div v-if="searchLoading" class="search-loading">
-                <span>Recherche...</span>
+                <span>Searching...</span>
               </div>
               <div v-else-if="searchResults.length === 0" class="no-results">
-                <p>Aucun utilisateur trouvé</p>
+                <p>No users found</p>
               </div>
               <div v-else v-for="user in searchResults" :key="user.userId" class="user-item-wrapper">
                 <button
@@ -154,28 +154,28 @@
               </div>
             </div>
 
-            <!-- Message d'aide si rien n'est affiché -->
+            <!-- Help message if nothing is displayed -->
             <div v-if="!searchQuery && recentConversations.length === 0" class="empty-state">
               <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" opacity="0.3">
                 <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
               </svg>
-              <p style="margin-top:12px;font-size:13px;color:#64748b;">Recherchez un utilisateur pour démarrer une conversation</p>
+              <p style="margin-top:12px;font-size:13px;color:#64748b;">Search for a user to start a conversation</p>
             </div>
             
             <div v-if="searchQuery && searchQuery.length < minSearchLength" class="search-hint">
-              <p>Tapez au moins {{ minSearchLength }} caractères pour rechercher</p>
+              <p>Type at least {{ minSearchLength }} characters to search</p>
             </div>
           </div>
         </div>
 
-        <!-- Zone des messages : affichée seulement si une conversation privée ou groupe est sélectionnée -->
+        <!-- Messages area: displayed only if a private conversation or group is selected -->
         <div v-if="selectedUser || selectedGroup" class="messages-container" ref="messagesContainer">
           <div v-if="loading" class="loading-messages">
-            <span>Chargement des messages...</span>
+            <span>Loading messages...</span>
           </div>
           
           <div v-else-if="messages.length === 0" class="no-messages">
-            <p>Aucun message. Commencez la conversation !</p>
+            <p>No messages. Start the conversation!</p>
           </div>
           
           <div v-else class="messages-list">
@@ -183,10 +183,9 @@
               v-for="(message, index) in messages" 
               :key="message.id" 
             >
-              <!-- Barre 'Nouveaux messages' : insérée une seule fois avant le premier message non lu -->
-              <!-- Tailwind suggestion: "mx-auto px-3 py-1 bg-white/90 text-sm text-gray-600 rounded-full shadow" -->
+              <!-- 'New messages' bar: inserted once before the first unread message -->
               <div v-if="hasNewMessages && newMessagesStartIndex !== null && index === newMessagesStartIndex" class="new-messages-divider">
-                <span class="divider-text">Nouveaux messages</span>
+                <span class="divider-text">New messages</span>
               </div>
 
               <div class="message" :class="{ 'own-message': message.sender === currentUserId }">
@@ -201,8 +200,8 @@
                 </div>
 
                 <div class="message-actions" v-if="message.sender === currentUserId && editingMessageId !== (message.id || message._id)">
-                  <button @click="startEdit(message)" class="btn-icon small" title="Éditer">✏️</button>
-                  <button @click="submitDelete(message)" class="btn-icon small" title="Supprimer">🗑️</button>
+                  <button @click="startEdit(message)" class="btn-icon small" title="Edit">✏️</button>
+                  <button @click="submitDelete(message)" class="btn-icon small" title="Delete">🗑️</button>
                 </div>
                 <div class="message-content">
                   <template v-if="editingMessageId === (message.id || message._id)">
@@ -214,48 +213,48 @@
                   </template>
                   <template v-else>
                     <span>{{ message.content }}</span>
-                    <small v-if="message.edited" style="margin-left:8px;color:#6b7280;font-style:italic">(modifié)</small>
+                    <small v-if="message.edited" style="margin-left:8px;color:#6b7280;font-style:italic">(edited)</small>
                   </template>
                 </div>
               </div>
             </div>
           </div>
-          <!-- Indicateur de nouveaux messages (flottant en bas) -->
+          <!-- New messages indicator (floating at bottom) -->
           <div v-if="hasNewMessages" class="new-messages-indicator">
             <button class="new-messages-btn" @click="handleClickNewMessages">
-              Nouveaux messages
+              New messages
               <span v-if="newMessagesCount > 1" class="new-messages-badge">{{ newMessagesCount }}</span>
             </button>
           </div>
           
-          <!-- Indicateur de frappe -->
+          <!-- Typing indicator -->
           <div v-if="typingUsers.length > 0" class="typing-indicator">
             <div class="typing-dots">
               <span></span>
               <span></span>
               <span></span>
             </div>
-            <span>{{ typingUsers.join(', ') }} {{ typingUsers.length > 1 ? 'écrivent' : 'écrit' }}...</span>
+            <span>{{ typingUsers.join(', ') }} {{ typingUsers.length > 1 ? 'are typing' : 'is typing' }}...</span>
           </div>
         </div>
 
         <!-- Placeholder when no conversation is selected -->
         <div v-else class="no-conversation-placeholder" style="flex:1;display:flex;align-items:center;justify-content:center;padding:20px;">
           <div style="text-align:center;color:#64748b;">
-            <p style="font-weight:600;margin-bottom:6px;">Aucune conversation sélectionnée</p>
-            <p style="font-size:13px;">Choisissez un utilisateur ou un groupe dans la liste pour démarrer une discussion.</p>
+            <p style="font-weight:600;margin-bottom:6px;">No conversation selected</p>
+            <p style="font-size:13px;">Choose a user or group from the list to start a discussion.</p>
           </div>
         </div>
       </div>
 
-      <!-- Zone de saisie : affichée seulement si une conversation privée ou groupe est sélectionnée -->
+      <!-- Input area: displayed only if a private conversation or group is selected -->
       <div v-if="selectedUser || selectedGroup" class="chat-footer">
         <form @submit.prevent="sendMessage" class="message-form" ref="emojiWrapper">
           <input 
             v-model="newMessage" 
             ref="messageInput"
             type="text" 
-            placeholder="Tapez votre message..."
+            placeholder="Type your message..."
             @input="handleTyping"
             @blur="stopTyping"
             class="message-input"
@@ -263,7 +262,7 @@
           />
 
           <div class="emoji-area">
-            <button type="button" class="emoji-btn" @click.stop="toggleEmojiPicker" title="Émojis">
+            <button type="button" class="emoji-btn" @click.stop="toggleEmojiPicker" title="Emojis">
               😊
             </button>
 
@@ -292,7 +291,7 @@
       <div v-if="showMembersModal" class="modal-overlay" @click="closeMembersModal">
         <div class="modal-container members-modal" @click.stop>
           <div class="modal-header">
-            <h3>Membres du groupe</h3>
+            <h3>Group members</h3>
             <button @click="closeMembersModal" class="btn-close">
               <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <line x1="18" y1="6" x2="6" y2="18"></line>
@@ -305,9 +304,9 @@
             <div class="members-list">
               <div v-for="member in groupMembers" :key="member.id" class="member-item">
                 <span class="member-avatar">{{ (member.username || 'U').charAt(0).toUpperCase() }}</span>
-                <span class="member-name">{{ member.username || 'Utilisateur' }}</span>
-                <span v-if="member.id === selectedGroup?.creator?.id || member.id === selectedGroup?.creator" class="member-badge">Créateur</span>
-                <span v-else-if="member.id === currentUserId" class="member-badge-me">Vous</span>
+                <span class="member-name">{{ member.username || 'User' }}</span>
+                <span v-if="member.id === selectedGroup?.creator?.id || member.id === selectedGroup?.creator" class="member-badge">Creator</span>
+                <span v-else-if="member.id === currentUserId" class="member-badge-me">You</span>
               </div>
             </div>
             
@@ -318,7 +317,7 @@
                   <polyline points="16 17 21 12 16 7"></polyline>
                   <line x1="21" y1="12" x2="9" y2="12"></line>
                 </svg>
-                <span>Quitter le groupe</span>
+                <span>Leave group</span>
               </button>
             </div>
           </div>
@@ -377,12 +376,12 @@ const currentUserName = computed(() => authStore.currentUser.value?.username)
 
 const headerTitle = computed(() => {
   if (selectedGroup.value) {
-    return `Groupe: ${selectedGroup.value.name}`
+    return `Group: ${selectedGroup.value.name}`
   }
   if (selectedUser.value) {
-    return `Chat avec ${selectedUser.value.username}`
+    return `Chat with ${selectedUser.value.username}`
   }
-  return 'Sélectionnez une conversation'
+  return 'Select a conversation'
 })
 
 const isGroupCreator = computed(() => {
@@ -478,7 +477,7 @@ function selectPrivateChat(user) {
   selectedGroup.value = null
   showUserList.value = false
 
-  // Ajouter aux conversations récentes
+  // Add to recent conversations
   recentUserIds.value.add(user.userId)
   saveRecentConversations()
 
@@ -523,7 +522,7 @@ function selectGroupChat(group) {
 }
 
 function goBack() {
-  // Quitter la conversation privée ou groupe et revenir à la liste
+  // Leave private conversation or group and return to list
   stopTyping()
   // Leave room
   if (currentRoom.value) {
@@ -542,7 +541,7 @@ async function connectSocket() {
   const token = authStore.token.value
   if (!token) return
 
-  // Nettoyer les anciens listeners avant d'en ajouter de nouveaux
+  // Clean old listeners before adding new ones
   socketService.removeAllListeners()
 
   socketService.connect(token)
@@ -566,7 +565,7 @@ async function connectSocket() {
     currentRoom.value = room
     socketService.joinRoom(room)
   }
-  // Charger la liste des utilisateurs enregistrés (sans recherche, juste pour la liste complète en mémoire)
+  // Load the list of registered users (without search, just for the complete list in memory)
   try {
     const res = await chatApi.getAllUsers()
     if (res?.success) {
@@ -632,19 +631,19 @@ async function deleteGroup() {
         currentRoom.value = null
       }
       
-      // Revenir à la liste et réinitialiser
+      // Return to list and reset
       selectedGroup.value = null
       showUserList.value = true
       messages.value = []
       
-      // Retirer le groupe de la liste
+      // Remove group from list
       myGroups.value = myGroups.value.filter(g => g.id !== groupId)
       
-      console.log('Groupe supprimé avec succès')
+      console.log('Group deleted successfully')
     }
   } catch (err) {
     console.error('Failed to delete group:', err)
-    alert('Erreur lors de la suppression du groupe: ' + (err.message || 'Erreur inconnue'))
+    alert('Error deleting group: ' + (err.message || 'Unknown error'))
   }
 }
 
@@ -662,7 +661,7 @@ async function showGroupMembersModal() {
     }
   } catch (err) {
     console.error('Failed to load group members:', err)
-    alert('Erreur lors du chargement des membres: ' + (err.message || 'Erreur inconnue'))
+    alert('Error loading members: ' + (err.message || 'Unknown error'))
   }
 }
 
@@ -677,37 +676,37 @@ async function leaveGroup() {
   const groupId = selectedGroup.value.id
   const groupName = selectedGroup.value.name
   
-  const confirmed = confirm(`Êtes-vous sûr de vouloir quitter le groupe "${groupName}" ?`)
+  const confirmed = confirm(`Are you sure you want to leave the group "${groupName}"?`)
   if (!confirmed) return
   
   try {
     const res = await groupsApi.removeMember(groupId, currentUserId.value)
     if (res?.success) {
-      // Quitter la room socket
+      // Leave the socket room
       if (currentRoom.value) {
         socketService.leaveRoom(currentRoom.value)
         currentRoom.value = null
       }
       
-      // Fermer le modal et revenir à la liste
+      // Close modal and return to list
       closeMembersModal()
       selectedGroup.value = null
       showUserList.value = true
       messages.value = []
       
-      // Retirer le groupe de la liste
+      // Remove group from list
       myGroups.value = myGroups.value.filter(g => g.id !== groupId)
       
-      console.log('Vous avez quitté le groupe')
+      console.log('You left the group')
     }
   } catch (err) {
     console.error('Failed to leave group:', err)
-    alert('Erreur lors de la sortie du groupe: ' + (err.message || 'Erreur inconnue'))
+    alert('Error leaving group: ' + (err.message || 'Unknown error'))
   }
 }
 
 async function onGroupCreated(group) {
-  // Ajouter le nouveau groupe à la liste
+  // Add the new group to the list
   myGroups.value.push({
     ...group,
     unreadCount: 0
@@ -890,7 +889,7 @@ function handleNewPrivateMessage(message) {
       userInRecent.unreadCount = next
     }
     
-    // Ajouter l'utilisateur aux conversations récentes
+    // Add the user to recent conversations
     recentUserIds.value.add(sid)
     saveRecentConversations()
   }
@@ -1013,37 +1012,37 @@ function handleTypingUpdate(data) {
 }
 
 function handleGroupMemberAdded(data) {
-  // Si c'est pour l'utilisateur actuel, ajouter le groupe à la liste
+  // If it's for the current user, add the group to the list
   if (data.userId === currentUserId.value) {
     console.debug('[chat] added to group', data.group.name)
-    // Ajouter le groupe à la liste
+    // Add the group to the list
     if (!myGroups.value.some(g => g.id === data.group.id)) {
       myGroups.value.push({
         ...data.group,
         unreadCount: 0
       })
-      // Rejoindre automatiquement la room du groupe
+      // Automatically join the group room
       socketService.joinRoom(`group-${data.group.id}`)
     }
   }
-  // Si on est déjà dans ce groupe, recharger les infos
+  // If we're already in this group, reload the info
   else if (selectedGroup.value?.id === data.groupId) {
-    // Optionnel : recharger les détails du groupe pour voir les nouveaux membres
+    // Optional: reload group details to see new members
     loadGroups()
   }
 }
 
 function handleGroupDeleted(data) {
-  // Si c'est pour l'utilisateur actuel, retirer le groupe de la liste
+  // If it's for the current user, remove the group from the list
   if (data.userId === currentUserId.value) {
     console.debug('[chat] group deleted', data.groupId)
     
-    // Retirer le groupe de la liste
+    // Remove the group from the list
     myGroups.value = myGroups.value.filter(g => g.id !== data.groupId)
     
-    // Si on est dans ce groupe, revenir à la liste
+    // If we're in this group, return to list
     if (selectedGroup.value?.id === data.groupId) {
-      // Quitter la room socket
+      // Leave the socket room
       if (currentRoom.value) {
         socketService.leaveRoom(currentRoom.value)
         currentRoom.value = null
@@ -1057,16 +1056,16 @@ function handleGroupDeleted(data) {
 }
 
 function handleGroupMemberRemoved(data) {
-  // Si c'est l'utilisateur actuel qui a été retiré, retirer le groupe de la liste
+  // If the current user was removed, remove the group from the list
   if (data.userId === currentUserId.value) {
     console.debug('[chat] removed from group', data.groupId)
     
-    // Retirer le groupe de la liste
+    // Remove the group from the list
     myGroups.value = myGroups.value.filter(g => g.id !== data.groupId)
     
-    // Si on est dans ce groupe, revenir à la liste
+    // If we're in this group, return to list
     if (selectedGroup.value?.id === data.groupId) {
-      // Quitter la room socket
+      // Leave the socket room
       if (currentRoom.value) {
         socketService.leaveRoom(currentRoom.value)
         currentRoom.value = null
@@ -1077,9 +1076,9 @@ function handleGroupMemberRemoved(data) {
       messages.value = []
     }
   }
-  // Si on est dans le groupe et qu'un autre membre a été retiré, mettre à jour la liste des membres
+  // If we're in the group and another member was removed, update the member list
   else if (selectedGroup.value?.id === data.groupId && showMembersModal.value) {
-    // Recharger la liste des membres si le modal est ouvert
+    // Reload the member list if the modal is open
     showGroupMembersModal()
   }
 }
