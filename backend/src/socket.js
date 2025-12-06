@@ -6,7 +6,7 @@ const Group = require('./models/Group');
 
 let io;
 
-// Map pour stocker les utilisateurs connectés
+// Map to track connected users: userId -> { socketId, username, userId }
 const connectedUsers = new Map();
 
 function initializeSocket(server) {
@@ -18,7 +18,7 @@ function initializeSocket(server) {
     }
   });
 
-  // Middleware d'authentification pour Socket.io
+  // Authentication middleware for Socket.io
   io.use(async (socket, next) => {
     try {
       const token = socket.handshake.auth.token;
@@ -45,26 +45,26 @@ function initializeSocket(server) {
   io.on('connection', (socket) => {
     console.log(`User connected: ${socket.username} (${socket.userId})`);
     
-    // Ajouter l'utilisateur à la liste des connectés
+    // Add the user to the list of connected users
     connectedUsers.set(socket.userId, {
       socketId: socket.id,
       username: socket.username,
       userId: socket.userId
     });
 
-    // Notifier tous les utilisateurs de la nouvelle connexion
+    // Notify all users of the new connection
     io.emit('user:connected', {
       userId: socket.userId,
       username: socket.username,
       connectedUsers: Array.from(connectedUsers.values())
     });
 
-    // Envoyer la liste des utilisateurs connectés au nouvel arrivant
+    // Send the list of connected users to the newcomer
     socket.emit('users:online', Array.from(connectedUsers.values()));
 
-    // NOTE: Chat général désactivé — n'accepterons que des messages privés via 'message:private'
+    // NOTE: General chat disabled — will only accept private messages via 'message:private'
 
-    // Gestion des messages privés
+    // Private message handling
     socket.on('message:private', async (data) => {
       try {
         const { content, recipientId } = data;
@@ -77,7 +77,7 @@ function initializeSocket(server) {
           return socket.emit('error', { message: 'Recipient is required' });
         }
 
-        // Créer un ID de room unique pour la conversation privée
+        // Create a unique room ID for the private conversation
         const roomId = [socket.userId, recipientId].sort().join('-');
 
         const message = new Message({
@@ -101,7 +101,7 @@ function initializeSocket(server) {
           isPrivate: true
         };
 
-        // Envoyer le message à l'expéditeur
+        // Send the message to the sender
         socket.emit('message:private:received', messageData);
 
         // Envoyer le message au destinataire s'il est connecté
@@ -115,7 +115,7 @@ function initializeSocket(server) {
       }
     });
 
-    // Gestion des messages de groupe
+    // Group message handling
     socket.on('message:group', async (data) => {
       try {
         const { content, groupId } = data;
@@ -128,7 +128,7 @@ function initializeSocket(server) {
           return socket.emit('error', { message: 'Group ID is required' });
         }
         
-        // Vérifier que l'utilisateur est membre du groupe
+        // Verify that the user is a member of the group
         const group = await Group.findById(groupId);
         if (!group) {
           return socket.emit('error', { message: 'Group not found' });
@@ -159,7 +159,7 @@ function initializeSocket(server) {
           isGroup: true
         };
         
-        // Envoyer le message à tous les membres du groupe
+        // Send the message to all group members
         io.to(`group-${groupId}`).emit('message:group:received', messageData);
       } catch (error) {
         console.error('Error sending group message:', error);
@@ -167,7 +167,7 @@ function initializeSocket(server) {
       }
     });
 
-    // Indicateur de frappe (pour rooms privées et groupes)
+    // Typing indicator (for private rooms and groups)
     socket.on('typing:start', (data) => {
       const { room } = data;
       if (!room) return;
@@ -190,17 +190,17 @@ function initializeSocket(server) {
       });
     });
 
-    // Rejoindre une room spécifique (pour les messages privés)
+    // Join a specific room (for private messages)
     socket.on('room:join', (roomId) => {
       socket.join(roomId);
     });
 
-    // Quitter une room
+    // Leave a room
     socket.on('room:leave', (roomId) => {
       socket.leave(roomId);
     });
 
-    // Déconnexion
+    // DDisconnection
     socket.on('disconnect', () => {
       console.log(`User disconnected: ${socket.username}`);
       
@@ -225,7 +225,11 @@ function getIO() {
 }
 
 function getConnectedUsers() {
+  return connectedUsers;
+}
+
+function getConnectedUsersArray() {
   return Array.from(connectedUsers.values());
 }
 
-module.exports = { initializeSocket, getIO, getConnectedUsers };
+module.exports = { initializeSocket, getIO, getConnectedUsers, getConnectedUsersArray };

@@ -4,22 +4,22 @@ const authMiddleware = require('../middleware/auth');
 
 const router = express.Router();
 
-// POST /api/groups - Créer un nouveau groupe
+// POST /api/groups - Create a new group
 router.post('/', authMiddleware, async (req, res) => {
   try {
-    const { name, description, memberIds } = req.body;
+    const { name, memberIds } = req.body;
     
     if (!name || !name.trim()) {
       return res.status(400).json({
         success: false,
-        error: 'Le nom du groupe est requis'
+        error: 'Group name is required'
       });
     }
     
-    // Créer le groupe avec le créateur comme premier membre
+    // Create the group with the creator as the first member
     const members = [req.userId];
     
-    // Ajouter les autres membres (si fournis)
+    // Add other members (if provided)
     if (memberIds && Array.isArray(memberIds)) {
       memberIds.forEach(id => {
         if (id !== req.userId && !members.includes(id)) {
@@ -30,27 +30,41 @@ router.post('/', authMiddleware, async (req, res) => {
     
     const group = new Group({
       name: name.trim(),
-      description: description?.trim() || '',
       creator: req.userId,
       members
     });
     
     await group.save();
     
-    // Populer les informations des membres
+    // Populate member information
     await group.populate('members', 'username');
     await group.populate('creator', 'username');
     
-    // Émettre un événement socket pour notifier les membres ajoutés (sauf le créateur)
+    // Emit a socket event to notify added members (except the creator)
     if (members.length > 1) {
       const io = require('../socket').getIO();
+      const connectedUsers = require('../socket').getConnectedUsers();
+      
+      console.log('[Groups] Notifying members:', members);
+      console.log('[Groups] Connected users:', Array.from(connectedUsers.keys()));
+      
       members.forEach(memberId => {
         if (memberId !== req.userId) {
-          io.emit('group:member:added', {
-            groupId: group._id.toString(),
-            group: group.toJSON(),
-            userId: memberId
-          });
+          // Get the user's socket connection
+          const userConnection = connectedUsers.get(memberId);
+          console.log(`[Groups] Member ${memberId}: connection =`, userConnection);
+          
+          if (userConnection) {
+            // Emit directly to this user's socket
+            console.log(`[Groups] Emitting to socket ${userConnection.socketId}`);
+            io.to(userConnection.socketId).emit('group:member:added', {
+              groupId: group._id.toString(),
+              group: group.toJSON(),
+              userId: memberId
+            });
+          } else {
+            console.log(`[Groups] Member ${memberId} is not connected`);
+          }
         }
       });
     }
@@ -63,13 +77,13 @@ router.post('/', authMiddleware, async (req, res) => {
     console.error('Error creating group:', error);
     res.status(500).json({
       success: false,
-      error: 'Erreur lors de la création du groupe',
+      error: 'Error creating group',
       message: error.message
     });
   }
 });
 
-// GET /api/groups - Liste tous les groupes dont l'utilisateur est membre
+// GET /api/groups - List all groups the user is a member of
 router.get('/', authMiddleware, async (req, res) => {
   try {
     const groups = await Group.find({ members: req.userId })
@@ -85,13 +99,13 @@ router.get('/', authMiddleware, async (req, res) => {
     console.error('Error fetching groups:', error);
     res.status(500).json({
       success: false,
-      error: 'Erreur lors de la récupération des groupes',
+      error: 'Error fetching groups',
       message: error.message
     });
   }
 });
 
-// GET /api/groups/:id - Obtenir les détails d'un groupe
+// GET /api/groups/:id - Get group details
 router.get('/:id', authMiddleware, async (req, res) => {
   try {
     const group = await Group.findById(req.params.id);
@@ -99,19 +113,19 @@ router.get('/:id', authMiddleware, async (req, res) => {
     if (!group) {
       return res.status(404).json({
         success: false,
-        error: 'Groupe non trouvé'
+        error: 'Group not found'
       });
     }
     
-    // Vérifier que l'utilisateur est membre (avant populate)
+    // Verify that the user is a member (before populate)
     if (!group.isMember(req.userId)) {
       return res.status(403).json({
         success: false,
-        error: 'Vous n\'êtes pas membre de ce groupe'
+        error: 'You are not a member of this group'
       });
     }
     
-    // Populate après la vérification
+    // Populate after verification
     await group.populate('members', 'username');
     await group.populate('creator', 'username');
     
@@ -123,13 +137,13 @@ router.get('/:id', authMiddleware, async (req, res) => {
     console.error('Error fetching group:', error);
     res.status(500).json({
       success: false,
-      error: 'Erreur lors de la récupération du groupe',
+      error: 'Error fetching group',
       message: error.message
     });
   }
 });
 
-// PUT /api/groups/:id - Mettre à jour un groupe
+// PUT /api/groups/:id - Update a group
 router.put('/:id', authMiddleware, async (req, res) => {
   try {
     const { name, description } = req.body;
@@ -138,15 +152,15 @@ router.put('/:id', authMiddleware, async (req, res) => {
     if (!group) {
       return res.status(404).json({
         success: false,
-        error: 'Groupe non trouvé'
+        error: 'Group not found'
       });
     }
     
-    // Seul le créateur peut modifier le groupe
+    // Only the creator can update the group
     if (group.creator.toString() !== req.userId.toString()) {
       return res.status(403).json({
         success: false,
-        error: 'Seul le créateur peut modifier le groupe'
+        error: 'Only the creator can update the group'
       });
     }
     
@@ -166,13 +180,13 @@ router.put('/:id', authMiddleware, async (req, res) => {
     console.error('Error updating group:', error);
     res.status(500).json({
       success: false,
-      error: 'Erreur lors de la mise à jour du groupe',
+      error: 'Error updating group',
       message: error.message
     });
   }
 });
 
-// POST /api/groups/:id/members - Ajouter des membres à un groupe
+// POST /api/groups/:id/members - Add members to a group
 router.post('/:id/members', authMiddleware, async (req, res) => {
   try {
     const { userIds } = req.body;
@@ -180,7 +194,7 @@ router.post('/:id/members', authMiddleware, async (req, res) => {
     if (!userIds || !Array.isArray(userIds) || userIds.length === 0) {
       return res.status(400).json({
         success: false,
-        error: 'Liste d\'utilisateurs requise'
+        error: 'User list required'
       });
     }
     
@@ -189,19 +203,19 @@ router.post('/:id/members', authMiddleware, async (req, res) => {
     if (!group) {
       return res.status(404).json({
         success: false,
-        error: 'Groupe non trouvé'
+        error: 'Group not found'
       });
     }
     
-    // Vérifier que l'utilisateur est membre
+    // Verify that the user is a member
     if (!group.isMember(req.userId)) {
       return res.status(403).json({
         success: false,
-        error: 'Vous devez être membre pour ajouter des utilisateurs'
+        error: 'You must be a member to add users'
       });
     }
     
-    // Ajouter les nouveaux membres
+    // Add new members
     const newMembers = [];
     userIds.forEach(userId => {
       if (!group.isMember(userId)) {
@@ -214,7 +228,7 @@ router.post('/:id/members', authMiddleware, async (req, res) => {
     await group.populate('members', 'username');
     await group.populate('creator', 'username');
     
-    // Émettre un événement socket pour notifier les nouveaux membres
+    // Emit a socket event to notify new members
     if (newMembers.length > 0) {
       const io = require('../socket').getIO();
       newMembers.forEach(memberId => {
@@ -234,13 +248,13 @@ router.post('/:id/members', authMiddleware, async (req, res) => {
     console.error('Error adding members:', error);
     res.status(500).json({
       success: false,
-      error: 'Erreur lors de l\'ajout de membres',
+      error: 'Error adding members',
       message: error.message
     });
   }
 });
 
-// DELETE /api/groups/:id/members/:userId - Retirer un membre d'un groupe
+// DELETE /api/groups/:id/members/:userId - Remove a member from a group
 router.delete('/:id/members/:userId', authMiddleware, async (req, res) => {
   try {
     const group = await Group.findById(req.params.id);
@@ -248,26 +262,26 @@ router.delete('/:id/members/:userId', authMiddleware, async (req, res) => {
     if (!group) {
       return res.status(404).json({
         success: false,
-        error: 'Groupe non trouvé'
+        error: 'Group not found'
       });
     }
     
     const userToRemove = req.params.userId;
     const currentUserId = req.userId.toString();
     
-    // Soit le créateur retire quelqu'un, soit l'utilisateur se retire lui-même
+    // Either the creator removes someone, or the user removes themselves
     if (group.creator.toString() !== currentUserId && userToRemove !== currentUserId) {
       return res.status(403).json({
         success: false,
-        error: 'Non autorisé'
+        error: 'Not authorized'
       });
     }
     
-    // Ne pas permettre de retirer le créateur
+    // Do not allow removing the creator
     if (userToRemove === group.creator.toString()) {
       return res.status(400).json({
         success: false,
-        error: 'Le créateur ne peut pas quitter le groupe'
+        error: 'The creator cannot leave the group'
       });
     }
     
@@ -276,7 +290,7 @@ router.delete('/:id/members/:userId', authMiddleware, async (req, res) => {
     await group.populate('members', 'username');
     await group.populate('creator', 'username');
     
-    // Émettre un événement socket pour notifier que l'utilisateur a quitté
+    // Emit a socket event to notify that the user has left
     const io = require('../socket').getIO();
     io.emit('group:member:removed', {
       groupId: group._id.toString(),
@@ -292,13 +306,13 @@ router.delete('/:id/members/:userId', authMiddleware, async (req, res) => {
     console.error('Error removing member:', error);
     res.status(500).json({
       success: false,
-      error: 'Erreur lors du retrait du membre',
+      error: 'Error removing member',
       message: error.message
     });
   }
 });
 
-// DELETE /api/groups/:id - Supprimer un groupe
+// DELETE /api/groups/:id - Delete a group
 router.delete('/:id', authMiddleware, async (req, res) => {
   try {
     const group = await Group.findById(req.params.id);
@@ -306,15 +320,15 @@ router.delete('/:id', authMiddleware, async (req, res) => {
     if (!group) {
       return res.status(404).json({
         success: false,
-        error: 'Groupe non trouvé'
+        error: 'Group not found'
       });
     }
     
-    // Seul le créateur peut supprimer le groupe
+    // Only the creator can delete the group
     if (group.creator.toString() !== req.userId.toString()) {
       return res.status(403).json({
         success: false,
-        error: 'Seul le créateur peut supprimer le groupe'
+        error: 'Only the creator can delete the group'
       });
     }
     
@@ -323,7 +337,7 @@ router.delete('/:id', authMiddleware, async (req, res) => {
     
     await Group.findByIdAndDelete(req.params.id);
     
-    // Émettre un événement socket pour notifier tous les membres
+    // Emit a socket event to notify all members
     const io = require('../socket').getIO();
     members.forEach(memberId => {
       io.emit('group:deleted', {
@@ -334,13 +348,13 @@ router.delete('/:id', authMiddleware, async (req, res) => {
     
     res.json({
       success: true,
-      message: 'Groupe supprimé avec succès'
+      message: 'Group deleted successfully'
     });
   } catch (error) {
     console.error('Error deleting group:', error);
     res.status(500).json({
       success: false,
-      error: 'Erreur lors de la suppression du groupe',
+      error: 'Error deleting group',
       message: error.message
     });
   }

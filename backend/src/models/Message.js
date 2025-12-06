@@ -13,12 +13,12 @@ const messageSchema = new mongoose.Schema({
   recipient: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
-    default: null // null = message global ou groupe, sinon message privé
+    default: null // null = for group messages
   },
   group: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Group',
-    default: null // pour les messages de groupe
+    default: null // for group messages
   },
   content: {
     type: String,
@@ -60,7 +60,7 @@ const messageSchema = new mongoose.Schema({
   }
 });
 
-// Index pour les requêtes de messages par room
+// Index for message queries by room
 messageSchema.index({ room: 1, createdAt: -1 });
 messageSchema.index({ sender: 1, recipient: 1, createdAt: -1 });
 messageSchema.index({ group: 1, createdAt: -1 });

@@ -3,13 +3,13 @@ const router = express.Router();
 const auth = require('../middleware/auth');
 const Message = require('../models/Message');
 const Group = require('../models/Group');
-const { getConnectedUsers, getIO } = require('../socket');
+const { getConnectedUsersArray, getIO } = require('../socket');
 
-// Récupérer l'historique des messages d'une room
+// show messages from a specific room
 router.get('/messages/:room', auth, async (req, res) => {
   try {
     const { room } = req.params;
-    // Désactiver l'accès au chat général
+    // Disable access to general chat
     if (room === 'general') {
       return res.status(403).json({ success: false, error: 'General chat is disabled' });
     }
@@ -17,7 +17,7 @@ router.get('/messages/:room', auth, async (req, res) => {
 
     const query = { room, deleted: { $ne: true } };
     
-    // Pagination par curseur
+    // Cursor-based pagination
     if (before) {
       query.createdAt = { $lt: new Date(before) };
     }
@@ -27,7 +27,7 @@ router.get('/messages/:room', auth, async (req, res) => {
       .limit(parseInt(limit))
       .lean();
 
-    // Inverser pour avoir les messages dans l'ordre chronologique
+    // Reverse to have messages in chronological order
     messages.reverse();
 
     res.json({
@@ -55,16 +55,16 @@ router.get('/messages/:room', auth, async (req, res) => {
   }
 });
 
-// Récupérer les messages privés entre deux utilisateurs
+// Retrieve private messages between two users
 router.get('/private/:userId', auth, async (req, res) => {
   try {
     const { userId } = req.params;
     const { limit = 50, before } = req.query;
-    // req.userId est défini par le middleware d'auth et contient l'ObjectId
+    // req.userId is set by the auth middleware and contains the ObjectId
     const currentUserIdObj = req.userId;
     const currentUserId = currentUserIdObj.toString();
 
-    // Créer l'ID de room pour la conversation privée (utiliser les chaînes)
+    // Create the room ID for the private conversation (use strings)
     const roomId = [currentUserId, userId].sort().join('-');
 
     const query = { room: roomId, deleted: { $ne: true } };
@@ -106,25 +106,25 @@ router.get('/private/:userId', auth, async (req, res) => {
   }
 });
 
-// Récupérer les messages d'un groupe
+// Retrieve group messages
 router.get('/group/:groupId', auth, async (req, res) => {
   try {
     const { groupId } = req.params;
     const { limit = 50, before } = req.query;
     
-    // Vérifier que l'utilisateur est membre du groupe
+    // Verify that the user is a member of the group
     const group = await Group.findById(groupId);
     if (!group) {
       return res.status(404).json({
         success: false,
-        error: 'Groupe non trouvé'
+        error: 'Group not found'
       });
     }
     
     if (!group.isMember(req.userId)) {
       return res.status(403).json({
         success: false,
-        error: 'Vous n\'êtes pas membre de ce groupe'
+        error: 'You are not a member of this group'
       });
     }
     
@@ -167,10 +167,10 @@ router.get('/group/:groupId', auth, async (req, res) => {
   }
 });
 
-// Récupérer la liste des utilisateurs connectés
+// get online users
 router.get('/users/online', auth, async (req, res) => {
   try {
-    const users = getConnectedUsers();
+    const users = getConnectedUsersArray();
     res.json({
       success: true,
       data: users
@@ -184,13 +184,13 @@ router.get('/users/online', auth, async (req, res) => {
   }
 });
 
-// Récupérer les conversations récentes de l'utilisateur
+// Retrieve recent conversations of the user
 router.get('/conversations', auth, async (req, res) => {
   try {
-    // Utiliser req.userId (ObjectId) pour les requêtes MongoDB
+    // Use req.userId (ObjectId) for MongoDB queries
     const currentUserId = req.userId;
 
-    // Trouver les derniers messages privés où l'utilisateur est impliqué
+    // Find the latest private messages where the user is involved
     const conversations = await Message.aggregate([
       {
         $match: {
@@ -242,7 +242,7 @@ router.get('/conversations', auth, async (req, res) => {
 
 module.exports = router;
 
-// Endpoint pour éditer un message (seul l'expéditeur peut éditer)
+// endpoint to edit a message (only sender can edit)
 router.put('/messages/:id', auth, async (req, res) => {
   try {
     const { id } = req.params;
@@ -254,7 +254,7 @@ router.put('/messages/:id', auth, async (req, res) => {
     const message = await Message.findById(id);
     if (!message) return res.status(404).json({ success: false, error: 'Message not found' });
 
-    // Vérifier que c'est bien l'expéditeur
+    // Verify that the sender is the one editing
     if (message.sender.toString() !== req.userId.toString()) {
       return res.status(403).json({ success: false, error: 'Not authorized to edit this message' });
     }
@@ -278,12 +278,12 @@ router.put('/messages/:id', auth, async (req, res) => {
     };
 
     try {
-      // Émettre l'événement de mise à jour aux membres de la room privée
+      // Emit the update event to members of the private room
       const io = getIO();
       if (message.room) {
         io.to(message.room).emit('message:private:updated', messageData);
       } else {
-        // fallback: émettre au destinataire et à l'expéditeur
+        // fallback: emit to recipient and sender
         io.emit('message:private:updated', messageData);
       }
     } catch (emitErr) {
@@ -297,7 +297,7 @@ router.put('/messages/:id', auth, async (req, res) => {
   }
 });
 
-// Endpoint pour supprimer (soft-delete) un message (seul l'expéditeur peut supprimer)
+// endpoint to delete (soft-delete) a message (only sender can delete)
 router.delete('/messages/:id', auth, async (req, res) => {
   try {
     const { id } = req.params;
@@ -305,7 +305,7 @@ router.delete('/messages/:id', auth, async (req, res) => {
     const message = await Message.findById(id);
     if (!message) return res.status(404).json({ success: false, error: 'Message not found' });
 
-    // Vérifier que c'est bien l'expéditeur
+    // Verify that the sender is the one deleting
     if (message.sender.toString() !== req.userId.toString()) {
       return res.status(403).json({ success: false, error: 'Not authorized to delete this message' });
     }

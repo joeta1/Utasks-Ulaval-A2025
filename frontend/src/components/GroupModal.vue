@@ -1,3 +1,133 @@
+
+<script setup>
+import { ref, computed, watch } from 'vue'
+import { groupsApi } from '../services/api'
+import { usersApi } from '../services/api'
+import authStore from '../stores/auth'
+
+const props = defineProps({
+  isOpen: Boolean,
+  group: Object
+})
+
+const emit = defineEmits(['close', 'created', 'updated'])
+
+const isEditing = computed(() => !!props.group)
+
+const groupName = ref('')
+const groupDescription = ref('')
+const selectedMembers = ref([])
+const memberSearch = ref('')
+const memberSearchResults = ref([])
+const searchTimeout = ref(null)
+const loading = ref(false)
+const error = ref('')
+
+const currentUserId = computed(() => authStore.currentUser.value?.id)
+
+watch(() => props.group, (newGroup) => {
+  if (newGroup) {
+    groupName.value = newGroup.name || ''
+    groupDescription.value = newGroup.description || ''
+  } else {
+    resetForm()
+  }
+}, { immediate: true })
+
+function resetForm() {
+  groupName.value = ''
+  groupDescription.value = ''
+  selectedMembers.value = []
+  memberSearch.value = ''
+  memberSearchResults.value = []
+  error.value = ''
+}
+
+function closeModal() {
+  resetForm()
+  emit('close')
+}
+
+function onSearchMembers() {
+  if (searchTimeout.value) {
+    clearTimeout(searchTimeout.value)
+  }
+  
+  if (!memberSearch.value || memberSearch.value.length < 1) {
+    memberSearchResults.value = []
+    return
+  }
+  
+  searchTimeout.value = setTimeout(async () => {
+    try {
+      const res = await usersApi.search(memberSearch.value)
+      if (res?.success) {
+        // Exclude current user and already selected members
+        memberSearchResults.value = res.data.filter(u => 
+          u.id !== currentUserId.value && !selectedMembers.value.some(m => m.id === u.id)
+        )
+      }
+    } catch (err) {
+      console.error('Failed to search members:', err)
+    }
+  }, 300)
+}
+
+function addMember(user) {
+  if (!selectedMembers.value.some(m => m.id === user.id)) {
+    selectedMembers.value.push(user)
+    memberSearchResults.value = memberSearchResults.value.filter(u => u.id !== user.id)
+  }
+}
+
+function removeMember(userId) {
+  selectedMembers.value = selectedMembers.value.filter(m => m.id !== userId)
+}
+
+async function handleSubmit() {
+  if (!groupName.value.trim()) {
+    error.value = 'Group name is required'
+    return
+  }
+  
+  loading.value = true
+  error.value = ''
+  
+  try {
+    if (isEditing.value) {
+      // Edit mode
+      const res = await groupsApi.update(props.group.id, {
+        name: groupName.value.trim(),
+        description: groupDescription.value.trim()
+      })
+      
+      if (res?.success) {
+        emit('updated', res.data)
+        closeModal()
+      }
+    } else {
+      // Create mode
+      const memberIds = selectedMembers.value.map(m => m.id)
+      const res = await groupsApi.create(
+        groupName.value.trim(),
+        groupDescription.value.trim(),
+        memberIds
+      )
+      
+      if (res?.success) {
+        emit('created', res.data)
+        closeModal()
+      }
+    }
+  } catch (err) {
+    console.error('Failed to save group:', err)
+    error.value = err.message || 'An error occurred'
+  } finally {
+    loading.value = false
+  }
+}
+</script>
+
 <template>
   <div v-if="isOpen" class="modal-overlay" @click="closeModal">
     <div class="modal-container" @click.stop>
@@ -89,135 +219,6 @@
   </div>
 </template>
 
-<script setup>
-import { ref, computed, watch } from 'vue'
-import { groupsApi } from '../services/api'
-import { usersApi } from '../services/api'
-import authStore from '../stores/auth'
-
-const props = defineProps({
-  isOpen: Boolean,
-  group: Object
-})
-
-const emit = defineEmits(['close', 'created', 'updated'])
-
-const isEditing = computed(() => !!props.group)
-
-const groupName = ref('')
-const groupDescription = ref('')
-const selectedMembers = ref([])
-const memberSearch = ref('')
-const memberSearchResults = ref([])
-const searchTimeout = ref(null)
-const loading = ref(false)
-const error = ref('')
-
-const currentUserId = computed(() => authStore.currentUser.value?.id)
-
-watch(() => props.group, (newGroup) => {
-  if (newGroup) {
-    groupName.value = newGroup.name || ''
-    groupDescription.value = newGroup.description || ''
-  } else {
-    resetForm()
-  }
-}, { immediate: true })
-
-function resetForm() {
-  groupName.value = ''
-  groupDescription.value = ''
-  selectedMembers.value = []
-  memberSearch.value = ''
-  memberSearchResults.value = []
-  error.value = ''
-}
-
-function closeModal() {
-  resetForm()
-  emit('close')
-}
-
-function onSearchMembers() {
-  if (searchTimeout.value) {
-    clearTimeout(searchTimeout.value)
-  }
-  
-  if (!memberSearch.value || memberSearch.value.length < 2) {
-    memberSearchResults.value = []
-    return
-  }
-  
-  searchTimeout.value = setTimeout(async () => {
-    try {
-      const res = await usersApi.search(memberSearch.value)
-      if (res?.success) {
-        // Exclude current user and already selected members
-        memberSearchResults.value = res.data.filter(u => 
-          u.id !== currentUserId.value && !selectedMembers.value.some(m => m.id === u.id)
-        )
-      }
-    } catch (err) {
-      console.error('Failed to search members:', err)
-    }
-  }, 300)
-}
-
-function addMember(user) {
-  if (!selectedMembers.value.some(m => m.id === user.id)) {
-    selectedMembers.value.push(user)
-    memberSearchResults.value = memberSearchResults.value.filter(u => u.id !== user.id)
-  }
-}
-
-function removeMember(userId) {
-  selectedMembers.value = selectedMembers.value.filter(m => m.id !== userId)
-}
-
-async function handleSubmit() {
-  if (!groupName.value.trim()) {
-    error.value = 'Group name is required'
-    return
-  }
-  
-  loading.value = true
-  error.value = ''
-  
-  try {
-    if (isEditing.value) {
-      // Edit mode
-      const res = await groupsApi.update(props.group.id, {
-        name: groupName.value.trim(),
-        description: groupDescription.value.trim()
-      })
-      
-      if (res?.success) {
-        emit('updated', res.data)
-        closeModal()
-      }
-    } else {
-      // Create mode
-      const memberIds = selectedMembers.value.map(m => m.id)
-      const res = await groupsApi.create(
-        groupName.value.trim(),
-        groupDescription.value.trim(),
-        memberIds
-      )
-      
-      if (res?.success) {
-        emit('created', res.data)
-        closeModal()
-      }
-    }
-  } catch (err) {
-    console.error('Failed to save group:', err)
-    error.value = err.message || 'An error occurred'
-  } finally {
-    loading.value = false
-  }
-}
-</script>
-
 <style scoped>
 .modal-overlay {
   position: fixed;
@@ -268,9 +269,8 @@ async function handleSubmit() {
   display: flex;
   align-items: center;
   border-radius: 4px;
-  transition: background 0.2s;
 }
-
+    
 .btn-close:hover {
   background: #f1f5f9;
 }
@@ -346,7 +346,7 @@ async function handleSubmit() {
   align-items: center;
   justify-content: center;
   border-radius: 50%;
-  transition: background 0.2s;
+
 }
 
 .chip-remove:hover {
@@ -372,7 +372,6 @@ async function handleSubmit() {
   border-bottom: 1px solid #f1f5f9;
   cursor: pointer;
   text-align: left;
-  transition: background 0.2s;
   font-size: 14px;
 }
 
@@ -445,13 +444,13 @@ async function handleSubmit() {
 }
 
 .btn-primary {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(135deg, #2563eb 0%, #1e40af 100%);
   color: white;
 }
 
 .btn-primary:hover:not(:disabled) {
   transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.4);
 }
 
 .btn-primary:disabled {

@@ -380,6 +380,24 @@ async function leaveGroup() {
   }
 }
 
+function startPrivateChatWithMember(member) {
+  // Don't start a chat with yourself
+  if (member.id === currentUserId.value) return
+  
+  // Close the members modal
+  closeMembersModal()
+  
+  // Create user object compatible with selectPrivateChat
+  const user = {
+    userId: member.id,
+    username: member.username,
+    online: onlineUsers.value.some(ou => ou.userId === member.id)
+  }
+  
+  // Start private chat
+  selectPrivateChat(user)
+}
+
 async function onGroupCreated(group) {
   // Add the new group to the list
   myGroups.value.push({
@@ -689,6 +707,11 @@ function handleTypingUpdate(data) {
 }
 
 function handleGroupMemberAdded(data) {
+  console.log('[chat] Received group:member:added event:', data)
+  console.log('[chat] Current userId:', currentUserId.value)
+  console.log('[chat] Data userId:', data.userId)
+  console.log('[chat] Match:', data.userId === currentUserId.value)
+  
   // If it's for the current user, add the group to the list
   if (data.userId === currentUserId.value) {
     console.debug('[chat] added to group', data.group.name)
@@ -1362,11 +1385,20 @@ watch(messages, () => {
           
           <div class="modal-body">
             <div class="members-list">
-              <div v-for="member in groupMembers" :key="member.id" class="member-item">
+              <div 
+                v-for="member in groupMembers" 
+                :key="member.id" 
+                class="member-item"
+                :class="{ 'member-clickable': member.id !== currentUserId }"
+                @click="member.id !== currentUserId && startPrivateChatWithMember(member)"
+              >
                 <span class="member-avatar">{{ (member.username || 'U').charAt(0).toUpperCase() }}</span>
                 <span class="member-name">{{ member.username || 'User' }}</span>
                 <span v-if="member.id === selectedGroup?.creator?.id || member.id === selectedGroup?.creator" class="member-badge">Creator</span>
                 <span v-else-if="member.id === currentUserId" class="member-badge-me">You</span>
+                <svg v-else xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="member-chat-icon">
+                  <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+                </svg>
               </div>
             </div>
             
@@ -1395,12 +1427,12 @@ watch(messages, () => {
   z-index: 20;
 }
 .new-messages-btn {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(135deg, #2563eb 0%, #1e40af 100%);
   color: #fff;
   border: none;
   padding: 8px 12px;
   border-radius: 20px;
-  box-shadow: 0 6px 18px rgba(102,126,234,0.25);
+  box-shadow: 0 6px 18px rgba(37, 99, 235, 0.25);
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -1443,21 +1475,21 @@ watch(messages, () => {
   width: 56px;
   height: 56px;
   border-radius: 50%;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(135deg, #2563eb 0%, #1e40af 100%);
   border: none;
   color: white;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+  box-shadow: 0 4px 15px rgba(37, 99, 235, 0.4);
   transition: transform 0.2s, box-shadow 0.2s;
   position: relative;
 }
 
 .chat-toggle-btn:hover {
   transform: scale(1.1);
-  box-shadow: 0 6px 20px rgba(102, 126, 234, 0.5);
+  box-shadow: 0 6px 20px rgba(37, 99, 235, 0.5);
 }
 
 .chat-toggle-btn.has-unread {
@@ -1465,8 +1497,8 @@ watch(messages, () => {
 }
 
 @keyframes pulse {
-  0%, 100% { box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4); }
-  50% { box-shadow: 0 4px 25px rgba(102, 126, 234, 0.7); }
+  0%, 100% { box-shadow: 0 4px 15px rgba(37, 99, 235, 0.4); }
+  50% { box-shadow: 0 4px 25px rgba(37, 99, 235, 0.7); }
 }
 
 .unread-badge {
@@ -1497,7 +1529,7 @@ watch(messages, () => {
 }
 
 .chat-header {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(135deg, #2563eb 0%, #1e40af 100%);
   color: white;
   padding: 16px;
   display: flex;
@@ -1554,7 +1586,7 @@ watch(messages, () => {
 
 .user-list {
   width: 220px;
-  background: #f8fafc;
+  background: #f1f5f9;
   border-right: 1px solid #e2e8f0;
   display: flex;
   flex-direction: column;
@@ -1578,7 +1610,7 @@ watch(messages, () => {
 }
 
 .search-input:focus {
-  border-color: #667eea;
+  border-color: #2563eb;
 }
 
 .search-icon {
@@ -1663,7 +1695,7 @@ watch(messages, () => {
 }
 
 .user-item.active {
-  background: #667eea;
+  background: #2563eb;
   color: white;
 }
 
@@ -1671,7 +1703,7 @@ watch(messages, () => {
   width: 28px;
   height: 28px;
   border-radius: 50%;
-  background: #667eea;
+  background: #2563eb;
   color: white;
   display: flex;
   align-items: center;
@@ -1700,7 +1732,7 @@ watch(messages, () => {
   justify-content: center;
   gap: 8px;
   padding: 8px 12px;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(135deg, #2563eb 0%, #1e40af 100%);
   color: white;
   border: none;
   border-radius: 8px;
@@ -1712,7 +1744,7 @@ watch(messages, () => {
 
 .btn-create-group:hover {
   transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.4);
 }
 
 .user-name {
@@ -1850,7 +1882,7 @@ watch(messages, () => {
 }
 
 .own-message .message-sender {
-  color: #667eea;
+  color: #2563eb;
 }
 
 .message-time {
@@ -1869,7 +1901,7 @@ watch(messages, () => {
 }
 
 .own-message .message-content {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(135deg, #2563eb 0%, #1e40af 100%);
   color: white;
   border-top-left-radius: 16px;
   border-top-right-radius: 4px;
@@ -1987,14 +2019,14 @@ watch(messages, () => {
 }
 
 .message-input:focus {
-  border-color: #667eea;
+  border-color: #2563eb;
 }
 
 .send-btn {
   width: 40px;
   height: 40px;
   border-radius: 50%;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(135deg, #2563eb 0%, #1e40af 100%);
   border: none;
   color: white;
   cursor: pointer;
@@ -2124,13 +2156,36 @@ watch(messages, () => {
   background: #f8fafc;
   border-radius: 8px;
   border: 1px solid #e2e8f0;
+  transition: all 0.2s ease;
+}
+
+.member-item.member-clickable {
+  cursor: pointer;
+}
+
+.member-item.member-clickable:hover {
+  background: #e2e8f0;
+  border-color: #cbd5e1;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.member-chat-icon {
+  color: #2563eb;
+  opacity: 0.6;
+  transition: all 0.2s ease;
+}
+
+.member-item.member-clickable:hover .member-chat-icon {
+  opacity: 1;
+  transform: scale(1.1);
 }
 
 .member-avatar {
   width: 36px;
   height: 36px;
   border-radius: 50%;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(135deg, #2563eb 0%, #1e40af 100%);
   color: white;
   display: flex;
   align-items: center;
@@ -2148,7 +2203,7 @@ watch(messages, () => {
 
 .member-badge {
   padding: 4px 8px;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(135deg, #2563eb 0%, #1e40af 100%);
   color: white;
   border-radius: 12px;
   font-size: 11px;

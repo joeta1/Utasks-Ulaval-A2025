@@ -35,16 +35,16 @@ const groupSchema = new mongoose.Schema({
   }
 });
 
-// Index pour recherche rapide
+// Index for name to optimize search
 groupSchema.index({ name: 1 });
 groupSchema.index({ members: 1 });
 
-// Méthode pour vérifier si un utilisateur est membre
+// MMethod to check if a user is a member
 groupSchema.methods.isMember = function(userId) {
   return this.members.some(memberId => memberId.toString() === userId.toString());
 };
 
-// Méthode pour ajouter un membre
+// MMethod to add a member
 groupSchema.methods.addMember = function(userId) {
   if (!this.isMember(userId)) {
     this.members.push(userId);
@@ -52,20 +52,20 @@ groupSchema.methods.addMember = function(userId) {
   }
 };
 
-// Méthode pour retirer un membre
+// MMethod to remove a member
 groupSchema.methods.removeMember = function(userId) {
   this.members = this.members.filter(memberId => memberId.toString() !== userId.toString());
   this.updatedAt = new Date();
 };
 
-// Méthode pour formater la réponse
+// MMethod to format the response
 groupSchema.methods.toJSON = function() {
   const obj = this.toObject();
   obj.id = obj._id.toString();
   delete obj._id;
   delete obj.__v;
   
-  // Formater les membres si ce sont des objets
+  // Format members if they are objects
   if (obj.members && Array.isArray(obj.members)) {
     obj.members = obj.members.map(m => {
       if (m._id) {
@@ -75,7 +75,7 @@ groupSchema.methods.toJSON = function() {
     });
   }
   
-  // Formater le créateur
+  // Format the creator
   if (obj.creator && obj.creator._id) {
     obj.creator = { id: obj.creator._id.toString(), username: obj.creator.username };
   } else if (typeof obj.creator === 'object') {
