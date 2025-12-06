@@ -1,6 +1,1066 @@
+
+<script setup>
+import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
+import authStore from '../stores/auth'
+import { socketService, chatApi } from '../services/socket'
+import { usersApi, groupsApi } from '../services/api'
+import GroupModal from './GroupModal.vue'
+
+// State
+const isOpen = ref(false)
+const showUserList = ref(false)
+const loading = ref(false)
+const messages = ref([])
+const newMessage = ref('')
+const onlineUsers = ref([])
+const allUsers = ref([])
+const typingUsers = ref([])
+const currentView = ref('private') // private or group
+const selectedUser = ref(null)
+const selectedGroup = ref(null)
+const unreadMap = ref({})
+const unreadCount = computed(() => {
+  const privateUnread = Object.values(unreadMap.value).reduce((s, v) => s + (v || 0), 0)
+  const groupUnread = Object.values(groupUnreadMap.value).reduce((s, v) => s + (v || 0), 0)
+  return privateUnread + groupUnread
+})
+const typingTimeout = ref(null)
+const currentRoom = ref(null)
+
+// Group state
+const myGroups = ref([])
+const showGroupModal = ref(false)
+const showMembersModal = ref(false)
+const groupMembers = ref([])
+const groupUnreadMap = ref({})
+
+// Search state
+const searchQuery = ref('')
+const searchResults = ref([])
+const searchLoading = ref(false)
+const searchDebounceTimeout = ref(null)
+const minSearchLength = 2
+const recentUserIds = ref(new Set())
+
+// Computed
+const currentUserId = computed(() => authStore.currentUser.value?.id)
+const currentUserName = computed(() => authStore.currentUser.value?.username)
+
+const headerTitle = computed(() => {
+  if (selectedGroup.value) {
+    return `Group: ${selectedGroup.value.name}`
+  }
+  if (selectedUser.value) {
+    return `Chat with ${selectedUser.value.username}`
+  }
+  return 'Select a conversation'
+})
+
+const isGroupCreator = computed(() => {
+  if (!selectedGroup.value) return false
+  const creatorId = selectedGroup.value.creator?.id || selectedGroup.value.creator
+  return creatorId === currentUserId.value
+})
+
+const displayedUsers = computed(() => {
+  // Merge registered users with online status and exclude the current user
+  return allUsers.value
+    .filter(u => u.id && u.id !== currentUserId.value)
+    .map(u => {
+      const isOnline = onlineUsers.value.some(ou => ou.userId === u.id)
+      return { userId: u.id, username: u.username, online: isOnline, unreadCount: unreadMap.value[u.id] || 0 }
+    })
+})
+
+const recentConversations = computed(() => {
+  // Users with whom there have already been conversations (present in recentUserIds)
+  const recent = Array.from(recentUserIds.value)
+    .filter(userId => userId !== currentUserId.value) // Exclude current user
+    .map(userId => {
+      const user = allUsers.value.find(u => u.id === userId)
+      if (!user) return null
+      const isOnline = onlineUsers.value.some(ou => ou.userId === user.id)
+      return { 
+        userId: user.id, 
+        username: user.username, 
+        online: isOnline, 
+        unreadCount: unreadMap.value[user.id] || 0 
+      }
+    })
+    .filter(u => u !== null)
+    .sort((a, b) => (b.unreadCount || 0) - (a.unreadCount || 0)) // Priorité aux messages non lus
+  return recent
+})
+
+// Générer une couleur basée sur l'ID de l'utilisateur
+function getUserColor(userId) {
+  if (!userId) return '#667eea'
+  
+  // Palette de couleurs distinctes et agréables
+  const colors = [
+    '#667eea', // violet
+    '#10b981', // vert
+    '#f59e0b', // orange
+    '#ef4444', // rouge
+    '#3b82f6', // bleu
+    '#8b5cf6', // purple
+    '#ec4899', // pink
+    '#14b8a6', // teal
+    '#f97316', // orange foncé
+    '#06b6d4', // cyan
+    '#84cc16', // lime
+    '#6366f1', // indigo
+  ]
+  
+  // Hash simple de l'userId pour obtenir un index
+  let hash = 0
+  const str = userId.toString()
+  for (let i = 0; i < str.length; i++) {
+    hash = str.charCodeAt(i) + ((hash << 5) - hash)
+  }
+  
+  const index = Math.abs(hash) % colors.length
+  return colors[index]
+}
+
+// Methods
+async function toggleChat() {
+  isOpen.value = !isOpen.value
+  if (isOpen.value) {
+    await connectSocket()
+    // If no conversation selected, show user list so user chooses a private chat
+    if (!selectedUser.value) showUserList.value = true
+    else loadMessages()
+  }
+}
+
+/* Removed toggleUserList: users button logic disabled for now */
+
+function selectPrivateChat(user) {
+  // Open a private conversation with the selected user
+  currentView.value = 'private'
+
+  // Leave previous room if any
+  if (currentRoom.value) {
+    socketService.leaveRoom(currentRoom.value)
+    currentRoom.value = null
+  }
+
+  selectedUser.value = user
+  selectedGroup.value = null
+  showUserList.value = false
+
+  // Add to recent conversations (only if not current user)
+  if (user.userId !== currentUserId.value) {
+    recentUserIds.value.add(user.userId)
+    saveRecentConversations()
+  }
+
+  // Mark this conversation as read (clear unread count)
+  if (unreadMap.value[user.userId]) {
+    unreadMap.value = { ...unreadMap.value, [user.userId]: 0 }
+  }
+
+  // Join the private room for typing presence
+  const room = [currentUserId.value, selectedUser.value.userId].sort().join('-')
+  currentRoom.value = room
+  socketService.joinRoom(room)
+
+  loadMessages()
+}
+
+function selectGroupChat(group) {
+  // Open a group conversation
+  currentView.value = 'group'
+
+  // Leave previous room if any
+  if (currentRoom.value) {
+    socketService.leaveRoom(currentRoom.value)
+    currentRoom.value = null
+  }
+
+  selectedGroup.value = group
+  selectedUser.value = null
+  showUserList.value = false
+
+  // Mark this group conversation as read
+  if (groupUnreadMap.value[group.id]) {
+    groupUnreadMap.value = { ...groupUnreadMap.value, [group.id]: 0 }
+  }
+
+  // Join the group room
+  const room = `group-${group.id}`
+  currentRoom.value = room
+  socketService.joinRoom(room)
+
+  loadMessages()
+}
+
+function goBack() {
+  // Leave private conversation or group and return to list
+  stopTyping()
+  // Leave room
+  if (currentRoom.value) {
+    socketService.leaveRoom(currentRoom.value)
+    currentRoom.value = null
+  }
+
+  selectedUser.value = null
+  selectedGroup.value = null
+  messages.value = []
+  loading.value = false
+  showUserList.value = true
+}
+
+async function connectSocket() {
+  const token = authStore.token.value
+  if (!token) return
+
+  // Clean old listeners before adding new ones
+  socketService.removeAllListeners()
+
+  socketService.connect(token)
+
+  // Listen to events (private and group)
+  socketService.on('message:private:received', handleNewPrivateMessage)
+  socketService.on('message:group:received', handleNewGroupMessage)
+  socketService.on('group:member:added', handleGroupMemberAdded)
+  socketService.on('group:member:removed', handleGroupMemberRemoved)
+  socketService.on('group:deleted', handleGroupDeleted)
+  socketService.on('users:online', handleOnlineUsers)
+  socketService.on('user:connected', handleUserConnected)
+  socketService.on('user:disconnected', handleUserDisconnected)
+  socketService.on('typing:update', handleTypingUpdate)
+  socketService.on('message:private:updated', handleUpdatedPrivateMessage)
+  socketService.on('message:private:deleted', handleDeletedPrivateMessage)
+  socketService.on('error', handleError)
+  // Join the current room if a conversation is already selected
+  if (selectedUser.value) {
+    const room = [currentUserId.value, selectedUser.value.userId].sort().join('-')
+    currentRoom.value = room
+    socketService.joinRoom(room)
+  }
+  // Load the list of registered users (without search, just for the complete list in memory)
+  try {
+    const res = await chatApi.getAllUsers()
+    if (res?.success) {
+      allUsers.value = res.data
+      // Ensure unreadMap has an entry for each user
+      res.data.forEach(u => {
+        if (u.id && u.id !== currentUserId.value) {
+          if (unreadMap.value[u.id] == null) {
+            unreadMap.value = { ...unreadMap.value, [u.id]: 0 }
+          }
+        }
+      })
+    }
+  } catch (err) {
+    console.error('Failed to load users:', err)
+  }
+  
+  // Load recent conversations from localStorage
+  loadRecentConversations()
+  
+  // Load user's groups
+  await loadGroups()
+  
+  // Automatically join all groups
+  myGroups.value.forEach(group => {
+    socketService.joinRoom(`group-${group.id}`)
+  })
+}
+
+async function loadGroups() {
+  try {
+    const res = await groupsApi.getAll()
+    if (res?.success) {
+      myGroups.value = res.data.map(g => ({
+        ...g,
+        unreadCount: groupUnreadMap.value[g.id] || 0
+      }))
+    }
+  } catch (err) {
+    console.error('Failed to load groups:', err)
+  }
+}
+
+function openGroupModal() {
+  showGroupModal.value = true
+}
+
+async function deleteGroup() {
+  if (!selectedGroup.value) return
+  
+  const groupId = selectedGroup.value.id
+  const groupName = selectedGroup.value.name
+  
+  const confirmed = confirm(`Are you sure you want to delete the group "${groupName}"? This action is irreversible.`)
+  if (!confirmed) return
+  
+  try {
+    const res = await groupsApi.delete(groupId)
+    if (res?.success) {
+      // Quitter la room socket
+      if (currentRoom.value) {
+        socketService.leaveRoom(currentRoom.value)
+        currentRoom.value = null
+      }
+      
+      // Return to list and reset
+      selectedGroup.value = null
+      showUserList.value = true
+      messages.value = []
+      
+      // Remove group from list
+      myGroups.value = myGroups.value.filter(g => g.id !== groupId)
+      
+      console.log('Group deleted successfully')
+    }
+  } catch (err) {
+    console.error('Failed to delete group:', err)
+    alert('Error deleting group: ' + (err.message || 'Unknown error'))
+  }
+}
+
+async function showGroupMembersModal() {
+  if (!selectedGroup.value) return
+  
+  try {
+    const res = await groupsApi.getById(selectedGroup.value.id)
+    if (res?.success && res.data) {
+      // Update selectedGroup with full details
+      selectedGroup.value = { ...selectedGroup.value, ...res.data }
+      groupMembers.value = res.data.members || []
+      console.log('Group members loaded:', groupMembers.value)
+      showMembersModal.value = true
+    }
+  } catch (err) {
+    console.error('Failed to load group members:', err)
+    alert('Error loading members: ' + (err.message || 'Unknown error'))
+  }
+}
+
+function closeMembersModal() {
+  showMembersModal.value = false
+  groupMembers.value = []
+}
+
+async function leaveGroup() {
+  if (!selectedGroup.value || !currentUserId.value) return
+  
+  const groupId = selectedGroup.value.id
+  const groupName = selectedGroup.value.name
+  
+  const confirmed = confirm(`Are you sure you want to leave the group "${groupName}"?`)
+  if (!confirmed) return
+  
+  try {
+    const res = await groupsApi.removeMember(groupId, currentUserId.value)
+    if (res?.success) {
+      // Leave the socket room
+      if (currentRoom.value) {
+        socketService.leaveRoom(currentRoom.value)
+        currentRoom.value = null
+      }
+      
+      // Close modal and return to list
+      closeMembersModal()
+      selectedGroup.value = null
+      showUserList.value = true
+      messages.value = []
+      
+      // Remove group from list
+      myGroups.value = myGroups.value.filter(g => g.id !== groupId)
+      
+      console.log('You left the group')
+    }
+  } catch (err) {
+    console.error('Failed to leave group:', err)
+    alert('Error leaving group: ' + (err.message || 'Unknown error'))
+  }
+}
+
+async function onGroupCreated(group) {
+  // Add the new group to the list
+  myGroups.value.push({
+    ...group,
+    unreadCount: 0
+  })
+  
+  // Automatically join the group room
+  const room = `group-${group.id}`
+  socketService.joinRoom(room)
+  
+  // Open the created group
+  selectGroupChat(group)
+}
+
+async function loadMessages() {
+  loading.value = true
+  try {
+    let data
+    if (selectedUser.value) {
+      data = await chatApi.getPrivateMessages(selectedUser.value.userId)
+    } else if (selectedGroup.value) {
+      data = await chatApi.getGroupMessages(selectedGroup.value.id)
+    } else {
+      messages.value = []
+      loading.value = false
+      return
+    }
+    
+    if (data?.success) {
+      messages.value = data.data
+      // when loading messages, consider we are at the bottom
+      atBottom.value = true
+      // Mark all as read
+      lastReadMessageId.value = messages.value.length ? messages.value[messages.value.length - 1].id : null
+      newMessagesStartIndex.value = null
+      newMessagesCount.value = 0
+      hasNewMessages.value = false
+      scrollToBottom()
+    }
+  } catch (error) {
+    console.error('Error loading messages:', error)
+  } finally {
+    loading.value = false
+  }
+}
+
+// Search functions
+function onSearchInput() {
+  // Clear previous timeout
+  if (searchDebounceTimeout.value) {
+    clearTimeout(searchDebounceTimeout.value)
+  }
+  
+  // Reset results if query is too short
+  if (!searchQuery.value || searchQuery.value.length < minSearchLength) {
+    searchResults.value = []
+    return
+  }
+  
+  // Debounce the search
+  searchDebounceTimeout.value = setTimeout(() => {
+    performSearch()
+  }, 300)
+}
+
+async function performSearch() {
+  if (!searchQuery.value || searchQuery.value.length < minSearchLength) {
+    searchResults.value = []
+    return
+  }
+  
+  searchLoading.value = true
+  try {
+    const res = await usersApi.search(searchQuery.value)
+    if (res?.success) {
+      // Filter out current user and map to display format
+      searchResults.value = res.data
+        .filter(u => u.id !== currentUserId.value)
+        .map(u => {
+          const isOnline = onlineUsers.value.some(ou => ou.userId === u.id)
+          return {
+            userId: u.id,
+            username: u.username,
+            online: isOnline,
+            unreadCount: unreadMap.value[u.id] || 0
+          }
+        })
+    }
+  } catch (err) {
+    console.error('Search failed:', err)
+    searchResults.value = []
+  } finally {
+    searchLoading.value = false
+  }
+}
+
+function clearSearch() {
+  searchQuery.value = ''
+  searchResults.value = []
+  if (searchDebounceTimeout.value) {
+    clearTimeout(searchDebounceTimeout.value)
+  }
+}
+
+// Recent conversations management
+function loadRecentConversations() {
+  try {
+    const stored = localStorage.getItem('chat-recent-conversations')
+    if (stored) {
+      const parsed = JSON.parse(stored)
+      recentUserIds.value = new Set(parsed)
+    }
+  } catch (err) {
+    console.error('Failed to load recent conversations:', err)
+    recentUserIds.value = new Set()
+  }
+}
+
+function saveRecentConversations() {
+  try {
+    const arr = Array.from(recentUserIds.value)
+    localStorage.setItem('chat-recent-conversations', JSON.stringify(arr))
+  } catch (err) {
+    console.error('Failed to save recent conversations:', err)
+  }
+}
+
+function handleNewPrivateMessage(message) {
+  // Check if it's a message from the currently opened and visible conversation
+  if (selectedUser.value && isOpen.value) {
+    const expectedRoom = [currentUserId.value, selectedUser.value.userId].sort().join('-')
+    if (message.room === expectedRoom) {
+      messages.value.push(message)
+      console.debug('[chat] new private message', {
+        id: message.id,
+        sender: message.sender,
+        currentUserId: currentUserId.value,
+        messagesLength: messages.value.length
+      })
+      // Only auto-scroll if the user is already at the bottom
+      if (messagesContainer.value) {
+        if (isElementAtBottom(messagesContainer.value)) {
+          atBottom.value = true
+          scrollToBottom()
+          // mark the message as read if we are at the bottom
+          lastReadMessageId.value = message.id
+        } else {
+          atBottom.value = false
+          // If the user is not at the bottom and the message is from another user,
+          // show the new messages indicator
+          if (message.sender !== currentUserId.value) {
+            console.debug('[chat] marking newMessagesStartIndex (first unread) at index', messages.value.length - 1)
+            // if this is the first new message since the last read,
+            // record the index where to start the "New messages" area
+            if (newMessagesStartIndex.value === null) {
+              newMessagesStartIndex.value = messages.value.length - 1
+            }
+            hasNewMessages.value = true
+            newMessagesCount.value = (newMessagesCount.value || 0) + 1
+          }
+        }
+      } else {
+        // fallback if the ref is not ready
+        scrollToBottom()
+      }
+      return
+    }
+  }
+  
+  // Message pour une autre conversation (ou chat fermé, ou conversation non visible)
+  if (message.sender !== currentUserId.value) {
+    // increment unread count for that sender
+    const sid = message.sender
+    const next = (unreadMap.value[sid] || 0) + 1
+    unreadMap.value = { ...unreadMap.value, [sid]: next }
+    console.debug('[chat] increment unread for', sid, '->', next)
+    
+    // Update the badge in recentConversations
+    const userInRecent = recentConversations.value.find(u => u.userId === sid)
+    if (userInRecent) {
+      userInRecent.unreadCount = next
+    }
+    
+    // Add the user to recent conversations (only if not current user)
+    if (sid !== currentUserId.value) {
+      recentUserIds.value.add(sid)
+      saveRecentConversations()
+    }
+  }
+}
+
+function handleNewGroupMessage(message) {
+  // Check if it's a message from the currently opened and visible group
+  if (selectedGroup.value && isOpen.value) {
+    const expectedRoom = `group-${selectedGroup.value.id}`
+    if (message.room === expectedRoom) {
+      messages.value.push(message)
+      console.debug('[chat] new group message', {
+        id: message.id,
+        sender: message.sender,
+        group: message.group,
+        messagesLength: messages.value.length
+      })
+      // Only auto-scroll if the user is already at the bottom
+      if (messagesContainer.value) {
+        if (isElementAtBottom(messagesContainer.value)) {
+          atBottom.value = true
+          scrollToBottom()
+          lastReadMessageId.value = message.id
+        } else {
+          atBottom.value = false
+          if (message.sender !== currentUserId.value) {
+            if (newMessagesStartIndex.value === null) {
+              newMessagesStartIndex.value = messages.value.length - 1
+            }
+            hasNewMessages.value = true
+            newMessagesCount.value = (newMessagesCount.value || 0) + 1
+          }
+        }
+      } else {
+        scrollToBottom()
+      }
+      return
+    }
+  }
+  
+  // Message for another group (or chat closed)
+  if (message.sender !== currentUserId.value && message.group) {
+    // Increment unread message count for this group
+    const gid = message.group
+    const next = (groupUnreadMap.value[gid] || 0) + 1
+    groupUnreadMap.value = { ...groupUnreadMap.value, [gid]: next }
+    console.debug('[chat] increment group unread for', gid, '->', next)
+    
+    // Update the count in myGroups reactively
+    const groupIndex = myGroups.value.findIndex(g => g.id === gid)
+    if (groupIndex !== -1) {
+      myGroups.value = myGroups.value.map((g, idx) => 
+        idx === groupIndex ? { ...g, unreadCount: next } : g
+      )
+    }
+  }
+}
+
+function handleUpdatedPrivateMessage(message) {
+  // Update the existing message in the view if it belongs to the current room
+  try {
+    if (selectedUser.value) {
+      const expectedRoom = [currentUserId.value, selectedUser.value.userId].sort().join('-')
+      if (message.room === expectedRoom) {
+        const idx = messages.value.findIndex(m => (m.id || m._id) === (message.id || message._id))
+        if (idx !== -1) {
+          // merge important fields
+          messages.value[idx].content = message.content
+          messages.value[idx].edited = true
+          messages.value[idx].editedAt = message.editedAt || new Date().toISOString()
+        }
+      }
+    }
+  } catch (err) {
+    console.error('Error handling updated private message', err)
+  }
+}
+
+function handleDeletedPrivateMessage(message) {
+  try {
+    if (selectedUser.value) {
+      const expectedRoom = [currentUserId.value, selectedUser.value.userId].sort().join('-')
+      if (message.room === expectedRoom) {
+        const idx = messages.value.findIndex(m => (m.id || m._id) === (message.id || message._id))
+        if (idx !== -1) {
+          // remove the message from the array (hard delete)
+          messages.value.splice(idx, 1)
+        }
+      }
+    }
+  } catch (err) {
+    console.error('Error handling deleted private message', err)
+  }
+}
+
+function handleOnlineUsers(users) {
+  onlineUsers.value = users
+}
+
+function handleUserConnected(data) {
+  onlineUsers.value = data.connectedUsers
+}
+
+function handleUserDisconnected(data) {
+  onlineUsers.value = data.connectedUsers
+  typingUsers.value = typingUsers.value.filter(u => u !== data.username)
+}
+
+function handleTypingUpdate(data) {
+  // make sure it's for the current room
+  if (data.room !== currentRoom.value) return
+  
+  if (data.isTyping) {
+    if (!typingUsers.value.includes(data.username)) {
+      typingUsers.value.push(data.username)
+    }
+  } else {
+    typingUsers.value = typingUsers.value.filter(u => u !== data.username)
+  }
+}
+
+function handleGroupMemberAdded(data) {
+  // If it's for the current user, add the group to the list
+  if (data.userId === currentUserId.value) {
+    console.debug('[chat] added to group', data.group.name)
+    // Add the group to the list
+    if (!myGroups.value.some(g => g.id === data.group.id)) {
+      myGroups.value.push({
+        ...data.group,
+        unreadCount: 0
+      })
+      // Automatically join the group room
+      socketService.joinRoom(`group-${data.group.id}`)
+    }
+  }
+  // If we're already in this group, reload the info
+  else if (selectedGroup.value?.id === data.groupId) {
+    // Optional: reload group details to see new members
+    loadGroups()
+  }
+}
+
+function handleGroupDeleted(data) {
+  // If it's for the current user, remove the group from the list
+  if (data.userId === currentUserId.value) {
+    console.debug('[chat] group deleted', data.groupId)
+    
+    // Remove the group from the list
+    myGroups.value = myGroups.value.filter(g => g.id !== data.groupId)
+    
+    // If we're in this group, return to list
+    if (selectedGroup.value?.id === data.groupId) {
+      // Leave the socket room
+      if (currentRoom.value) {
+        socketService.leaveRoom(currentRoom.value)
+        currentRoom.value = null
+      }
+      
+      selectedGroup.value = null
+      showUserList.value = true
+      messages.value = []
+    }
+  }
+}
+
+function handleGroupMemberRemoved(data) {
+  // If the current user was removed, remove the group from the list
+  if (data.userId === currentUserId.value) {
+    console.debug('[chat] removed from group', data.groupId)
+    
+    // Remove the group from the list
+    myGroups.value = myGroups.value.filter(g => g.id !== data.groupId)
+    
+    // If we're in this group, return to list
+    if (selectedGroup.value?.id === data.groupId) {
+      // Leave the socket room
+      if (currentRoom.value) {
+        socketService.leaveRoom(currentRoom.value)
+        currentRoom.value = null
+      }
+      
+      selectedGroup.value = null
+      showUserList.value = true
+      messages.value = []
+    }
+  }
+  // If we're in the group and another member was removed, update the member list
+  else if (selectedGroup.value?.id === data.groupId && showMembersModal.value) {
+    // Reload the member list if the modal is open
+    showGroupMembersModal()
+  }
+}
+
+function handleError(error) {
+  console.error('Socket error:', error)
+}
+
+function sendMessage() {
+  if (!newMessage.value.trim()) return
+  
+  if (selectedUser.value) {
+    // private message
+    if (selectedUser.value.userId === currentUserId.value) return
+    socketService.sendPrivateMessage(newMessage.value.trim(), selectedUser.value.userId)
+  } else if (selectedGroup.value) {
+    // group message
+    socketService.sendGroupMessage(newMessage.value.trim(), selectedGroup.value.id)
+  } else {
+    return
+  }
+
+  newMessage.value = ''
+  stopTyping()
+}
+
+function handleTyping() {
+  if (typingTimeout.value) {
+    clearTimeout(typingTimeout.value)
+  }
+
+  // Support private conversations and groups
+  if (!selectedUser.value && !selectedGroup.value) return
+  
+  // Use currentRoom if available, else compute
+  let room = currentRoom.value
+  if (!room) {
+    if (selectedUser.value) {
+      room = [currentUserId.value, selectedUser.value.userId].sort().join('-')
+    } else if (selectedGroup.value) {
+      room = `group-${selectedGroup.value.id}`
+    }
+  }
+  
+  if (room) {
+    socketService.startTyping(room)
+  }
+
+  typingTimeout.value = setTimeout(() => {
+    stopTyping()
+  }, 2000)
+}
+
+// Emoji picker state and helpers
+const emojis = ['😀','😂','😊','😍','😢','👍','🎉','🔥','🚀','🤝']
+const showEmojiPicker = ref(false)
+const messageInput = ref(null)
+const emojiWrapper = ref(null)
+
+// Edition de message
+const editingMessageId = ref(null)
+const editingContent = ref('')
+
+function startEdit(message) {
+  if (!message || message.sender !== currentUserId.value) return
+  editingMessageId.value = message.id || message._id
+  editingContent.value = message.content
+  // focus after next tick if desired
+  nextTick(() => {
+    const el = document.getElementById(`edit-input-${editingMessageId.value}`)
+    if (el) el.focus()
+  })
+}
+
+function cancelEdit() {
+  editingMessageId.value = null
+  editingContent.value = ''
+}
+
+async function submitEdit(message) {
+  if (!editingMessageId.value) return
+  const trimmed = (editingContent.value || '').trim()
+  if (!trimmed) return
+  try {
+    const res = await chatApi.updateMessage(editingMessageId.value, trimmed)
+    if (res?.success && res.data) {
+      // Update local message
+      const idx = messages.value.findIndex(m => (m.id || m._id) === editingMessageId.value)
+      if (idx !== -1) {
+        messages.value[idx].content = res.data.content
+        messages.value[idx].edited = true
+        messages.value[idx].editedAt = res.data.editedAt
+      }
+      // clear editing state
+      cancelEdit()
+    }
+  } catch (err) {
+    console.error('Failed to update message', err)
+  }
+}
+
+
+async function submitDelete(message) {
+  if (!message) return
+  // Only allow deleting own messages
+  if (message.sender !== currentUserId.value) return
+  const ok = window.confirm('Delete this message? This action is irreversible.')
+  if (!ok) return
+  try {
+    const res = await chatApi.deleteMessage(message.id || message._id)
+    if (res?.success && res.data) {
+      const idx = messages.value.findIndex(m => (m.id || m._id) === (res.data.id || res.data._id))
+      if (idx !== -1) {
+        // remove from local messages (hard delete)
+        messages.value.splice(idx, 1)
+      }
+    }
+  } catch (err) {
+    console.error('Failed to delete message', err)
+  }
+}
+function toggleEmojiPicker() {
+  showEmojiPicker.value = !showEmojiPicker.value
+  if (showEmojiPicker.value) {
+    // focus input so selection positions are available
+    nextTick(() => messageInput.value && messageInput.value.focus())
+  }
+}
+
+function insertEmoji(emoji) {
+  const input = messageInput.value
+  if (input && typeof input.selectionStart === 'number') {
+    const start = input.selectionStart
+    const end = input.selectionEnd
+    const val = newMessage.value || ''
+    newMessage.value = val.slice(0, start) + emoji + val.slice(end)
+    nextTick(() => {
+      const pos = start + emoji.length
+      try { input.setSelectionRange(pos, pos) } catch (e) { /* ignore */ }
+      input.focus()
+    })
+  } else {
+    newMessage.value = (newMessage.value || '') + emoji
+    nextTick(() => messageInput.value && messageInput.value.focus())
+  }
+  showEmojiPicker.value = false
+}
+
+function hideIfClickedOutside(e) {
+  if (!emojiWrapper.value) return
+  if (!emojiWrapper.value.contains(e.target)) {
+    showEmojiPicker.value = false
+  }
+}
+
+function stopTyping() {
+  if (typingTimeout.value) {
+    clearTimeout(typingTimeout.value)
+    typingTimeout.value = null
+  }
+  
+  // Support private conversations and groups
+  if (!selectedUser.value && !selectedGroup.value) return
+  
+  // User currentRoom if available, else compute
+  let room = currentRoom.value
+  if (!room) {
+    if (selectedUser.value) {
+      room = [currentUserId.value, selectedUser.value.userId].sort().join('-')
+    } else if (selectedGroup.value) {
+      room = `group-${selectedGroup.value.id}`
+    }
+  }
+  
+  if (room) {
+    socketService.stopTyping(room)
+  }
+}
+
+function handleClickNewMessages() {
+  hasNewMessages.value = false
+  newMessagesCount.value = 0
+  atBottom.value = true
+  // Smooth scroll to bottom
+  scrollToBottom(true)
+  // Marquer tout comme lu
+  newMessagesStartIndex.value = null
+  lastReadMessageId.value = messages.value.length ? messages.value[messages.value.length - 1].id : null
+}
+
+function formatTime(dateString) {
+  const date = new Date(dateString)
+  return date.toLocaleTimeString('fr-FR', { 
+    hour: '2-digit', 
+    minute: '2-digit' 
+  })
+}
+
+const messagesContainer = ref(null)
+const atBottom = ref(true)
+const hasNewMessages = ref(false)
+const newMessagesCount = ref(0)
+const newMessagesStartIndex = ref(null)
+const lastReadMessageId = ref(null)
+
+function isElementAtBottom(el, threshold = 20) {
+  if (!el) return true
+  const distance = el.scrollHeight - (el.scrollTop + el.clientHeight)
+  return distance <= threshold
+}
+
+function onMessagesContainerScroll() {
+  if (!messagesContainer.value) return
+  const wasAtBottom = atBottom.value
+  atBottom.value = isElementAtBottom(messagesContainer.value)
+  // If user scrolled to bottom, clear new message indicator
+  if (atBottom.value && !wasAtBottom) {
+    console.debug('[chat] user scrolled to bottom — clearing new messages markers', {
+      messagesLength: messages.value.length
+    })
+    hasNewMessages.value = false
+    newMessagesCount.value = 0
+    newMessagesStartIndex.value = null
+    // mark the last message as read
+    lastReadMessageId.value = messages.value.length ? messages.value[messages.value.length - 1].id : null
+  }
+}
+
+function scrollToBottom(smooth = false) {
+  nextTick(() => {
+    if (messagesContainer.value) {
+      const top = messagesContainer.value.scrollHeight
+      if (smooth && typeof messagesContainer.value.scrollTo === 'function') {
+        messagesContainer.value.scrollTo({ top, behavior: 'smooth' })
+      } else {
+        messagesContainer.value.scrollTop = top
+      }
+    }
+  })
+}
+
+// Attach/detach scroll listener when the element is rendered
+watch(messagesContainer, (el, oldEl) => {
+  if (oldEl) oldEl.removeEventListener('scroll', onMessagesContainerScroll)
+  if (el) el.addEventListener('scroll', onMessagesContainerScroll)
+}, { immediate: true })
+
+// Lifecycle
+onMounted(() => {
+  // Auto-connect if already authenticated
+  if (authStore.token.value) {
+    connectSocket()
+  }
+
+  // DDisconnect if the user logs out
+  watch(() => authStore.token.value, (val) => {
+    if (!val) {
+      socketService.disconnect()
+      messages.value = []
+      onlineUsers.value = []
+      unreadMap.value = {}
+      selectedUser.value = null
+      currentView.value = 'private'
+    } else {
+      // recconect if token becomes available
+      connectSocket()
+      loadMessages()
+    }
+  })
+})
+
+// Listen for clicks outside the emoji area to hide the picker
+onMounted(() => {
+  document.addEventListener('click', hideIfClickedOutside)
+})
+
+onUnmounted(() => {
+  socketService.removeAllListeners()
+  if (typingTimeout.value) {
+    clearTimeout(typingTimeout.value)
+  }
+  if (searchDebounceTimeout.value) {
+    clearTimeout(searchDebounceTimeout.value)
+  }
+  if (currentRoom.value) {
+    socketService.leaveRoom(currentRoom.value)
+    currentRoom.value = null
+  }
+  // Detach scroll listener if still attached
+  if (messagesContainer.value) {
+    messagesContainer.value.removeEventListener('scroll', onMessagesContainerScroll)
+  }
+  // Remove outside-click listener for emoji picker
+  document.removeEventListener('click', hideIfClickedOutside)
+})
+
+// Watchers
+watch(messages, () => {
+  if (atBottom.value) scrollToBottom()
+}, { deep: true })
+</script>
+
 <template>
   <div class="chat-container">
-    <!-- Bouton toggle pour ouvrir/fermer le chat -->
+    <!-- toggle for chat open/close -->
     <button 
       v-if="!isOpen" 
       @click="toggleChat" 
@@ -13,7 +1073,7 @@
       <span v-if="unreadCount > 0" class="unread-badge">{{ unreadCount }}</span>
     </button>
 
-    <!-- Panel de chat -->
+    <!--chat panel -->
     <div v-if="isOpen" class="chat-panel">
       <!-- Header -->
       <div class="chat-header">
@@ -52,7 +1112,7 @@
         </div>
       </div>
 
-      <!-- Contenu principal -->
+      <!-- Main content -->
       <div class="chat-body">
         <!-- User list (sidebar) -->
         <div v-if="showUserList" class="user-list">
@@ -327,1060 +1387,6 @@
   </div>
 </template>
 
-<script setup>
-import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
-import authStore from '../stores/auth'
-import { socketService, chatApi } from '../services/socket'
-import { usersApi, groupsApi } from '../services/api'
-import GroupModal from './GroupModal.vue'
-
-// State
-const isOpen = ref(false)
-const showUserList = ref(false)
-const loading = ref(false)
-const messages = ref([])
-const newMessage = ref('')
-const onlineUsers = ref([])
-const allUsers = ref([])
-const typingUsers = ref([])
-const currentView = ref('private') // private or group
-const selectedUser = ref(null)
-const selectedGroup = ref(null)
-const unreadMap = ref({})
-const unreadCount = computed(() => {
-  const privateUnread = Object.values(unreadMap.value).reduce((s, v) => s + (v || 0), 0)
-  const groupUnread = Object.values(groupUnreadMap.value).reduce((s, v) => s + (v || 0), 0)
-  return privateUnread + groupUnread
-})
-const typingTimeout = ref(null)
-const currentRoom = ref(null)
-
-// Group state
-const myGroups = ref([])
-const showGroupModal = ref(false)
-const showMembersModal = ref(false)
-const groupMembers = ref([])
-const groupUnreadMap = ref({})
-
-// Search state
-const searchQuery = ref('')
-const searchResults = ref([])
-const searchLoading = ref(false)
-const searchDebounceTimeout = ref(null)
-const minSearchLength = 2
-const recentUserIds = ref(new Set())
-
-// Computed
-const currentUserId = computed(() => authStore.currentUser.value?.id)
-const currentUserName = computed(() => authStore.currentUser.value?.username)
-
-const headerTitle = computed(() => {
-  if (selectedGroup.value) {
-    return `Group: ${selectedGroup.value.name}`
-  }
-  if (selectedUser.value) {
-    return `Chat with ${selectedUser.value.username}`
-  }
-  return 'Select a conversation'
-})
-
-const isGroupCreator = computed(() => {
-  if (!selectedGroup.value) return false
-  const creatorId = selectedGroup.value.creator?.id || selectedGroup.value.creator
-  return creatorId === currentUserId.value
-})
-
-const displayedUsers = computed(() => {
-  // Merge registered users with online status and exclude the current user
-  return allUsers.value
-    .filter(u => u.id && u.id !== currentUserId.value)
-    .map(u => {
-      const isOnline = onlineUsers.value.some(ou => ou.userId === u.id)
-      return { userId: u.id, username: u.username, online: isOnline, unreadCount: unreadMap.value[u.id] || 0 }
-    })
-})
-
-const recentConversations = computed(() => {
-  // Afficher les utilisateurs avec qui on a déjà eu des conversations (présents dans recentUserIds)
-  const recent = Array.from(recentUserIds.value)
-    .map(userId => {
-      const user = allUsers.value.find(u => u.id === userId)
-      if (!user) return null
-      const isOnline = onlineUsers.value.some(ou => ou.userId === user.id)
-      return { 
-        userId: user.id, 
-        username: user.username, 
-        online: isOnline, 
-        unreadCount: unreadMap.value[user.id] || 0 
-      }
-    })
-    .filter(u => u !== null)
-    .sort((a, b) => (b.unreadCount || 0) - (a.unreadCount || 0)) // Priorité aux messages non lus
-  return recent
-})
-
-// Générer une couleur basée sur l'ID de l'utilisateur
-function getUserColor(userId) {
-  if (!userId) return '#667eea'
-  
-  // Palette de couleurs distinctes et agréables
-  const colors = [
-    '#667eea', // violet
-    '#10b981', // vert
-    '#f59e0b', // orange
-    '#ef4444', // rouge
-    '#3b82f6', // bleu
-    '#8b5cf6', // purple
-    '#ec4899', // pink
-    '#14b8a6', // teal
-    '#f97316', // orange foncé
-    '#06b6d4', // cyan
-    '#84cc16', // lime
-    '#6366f1', // indigo
-  ]
-  
-  // Hash simple de l'userId pour obtenir un index
-  let hash = 0
-  const str = userId.toString()
-  for (let i = 0; i < str.length; i++) {
-    hash = str.charCodeAt(i) + ((hash << 5) - hash)
-  }
-  
-  const index = Math.abs(hash) % colors.length
-  return colors[index]
-}
-
-// Methods
-async function toggleChat() {
-  isOpen.value = !isOpen.value
-  if (isOpen.value) {
-    await connectSocket()
-    // If no conversation selected, show user list so user chooses a private chat
-    if (!selectedUser.value) showUserList.value = true
-    else loadMessages()
-  }
-}
-
-/* Removed toggleUserList: users button logic disabled for now */
-
-function selectPrivateChat(user) {
-  // Open a private conversation with the selected user
-  currentView.value = 'private'
-
-  // Leave previous room if any
-  if (currentRoom.value) {
-    socketService.leaveRoom(currentRoom.value)
-    currentRoom.value = null
-  }
-
-  selectedUser.value = user
-  selectedGroup.value = null
-  showUserList.value = false
-
-  // Add to recent conversations
-  recentUserIds.value.add(user.userId)
-  saveRecentConversations()
-
-  // Mark this conversation as read (clear unread count)
-  if (unreadMap.value[user.userId]) {
-    unreadMap.value = { ...unreadMap.value, [user.userId]: 0 }
-  }
-
-  // Join the private room for typing presence
-  const room = [currentUserId.value, selectedUser.value.userId].sort().join('-')
-  currentRoom.value = room
-  socketService.joinRoom(room)
-
-  loadMessages()
-}
-
-function selectGroupChat(group) {
-  // Open a group conversation
-  currentView.value = 'group'
-
-  // Leave previous room if any
-  if (currentRoom.value) {
-    socketService.leaveRoom(currentRoom.value)
-    currentRoom.value = null
-  }
-
-  selectedGroup.value = group
-  selectedUser.value = null
-  showUserList.value = false
-
-  // Mark this group conversation as read
-  if (groupUnreadMap.value[group.id]) {
-    groupUnreadMap.value = { ...groupUnreadMap.value, [group.id]: 0 }
-  }
-
-  // Join the group room
-  const room = `group-${group.id}`
-  currentRoom.value = room
-  socketService.joinRoom(room)
-
-  loadMessages()
-}
-
-function goBack() {
-  // Leave private conversation or group and return to list
-  stopTyping()
-  // Leave room
-  if (currentRoom.value) {
-    socketService.leaveRoom(currentRoom.value)
-    currentRoom.value = null
-  }
-
-  selectedUser.value = null
-  selectedGroup.value = null
-  messages.value = []
-  loading.value = false
-  showUserList.value = true
-}
-
-async function connectSocket() {
-  const token = authStore.token.value
-  if (!token) return
-
-  // Clean old listeners before adding new ones
-  socketService.removeAllListeners()
-
-  socketService.connect(token)
-
-  // Écouter les événements (private and group)
-  socketService.on('message:private:received', handleNewPrivateMessage)
-  socketService.on('message:group:received', handleNewGroupMessage)
-  socketService.on('group:member:added', handleGroupMemberAdded)
-  socketService.on('group:member:removed', handleGroupMemberRemoved)
-  socketService.on('group:deleted', handleGroupDeleted)
-  socketService.on('users:online', handleOnlineUsers)
-  socketService.on('user:connected', handleUserConnected)
-  socketService.on('user:disconnected', handleUserDisconnected)
-  socketService.on('typing:update', handleTypingUpdate)
-  socketService.on('message:private:updated', handleUpdatedPrivateMessage)
-  socketService.on('message:private:deleted', handleDeletedPrivateMessage)
-  socketService.on('error', handleError)
-  // Rejoindre la room actuelle si une conversation est déjà sélectionnée
-  if (selectedUser.value) {
-    const room = [currentUserId.value, selectedUser.value.userId].sort().join('-')
-    currentRoom.value = room
-    socketService.joinRoom(room)
-  }
-  // Load the list of registered users (without search, just for the complete list in memory)
-  try {
-    const res = await chatApi.getAllUsers()
-    if (res?.success) {
-      allUsers.value = res.data
-      // Ensure unreadMap has an entry for each user
-      res.data.forEach(u => {
-        if (u.id && u.id !== currentUserId.value) {
-          if (unreadMap.value[u.id] == null) {
-            unreadMap.value = { ...unreadMap.value, [u.id]: 0 }
-          }
-        }
-      })
-    }
-  } catch (err) {
-    console.error('Failed to load users:', err)
-  }
-  
-  // Charger les conversations récentes depuis le localStorage
-  loadRecentConversations()
-  
-  // Charger les groupes de l'utilisateur
-  await loadGroups()
-  
-  // Rejoindre automatiquement tous les groupes
-  myGroups.value.forEach(group => {
-    socketService.joinRoom(`group-${group.id}`)
-  })
-}
-
-async function loadGroups() {
-  try {
-    const res = await groupsApi.getAll()
-    if (res?.success) {
-      myGroups.value = res.data.map(g => ({
-        ...g,
-        unreadCount: groupUnreadMap.value[g.id] || 0
-      }))
-    }
-  } catch (err) {
-    console.error('Failed to load groups:', err)
-  }
-}
-
-function openGroupModal() {
-  showGroupModal.value = true
-}
-
-async function deleteGroup() {
-  if (!selectedGroup.value) return
-  
-  const groupId = selectedGroup.value.id
-  const groupName = selectedGroup.value.name
-  
-  const confirmed = confirm(`Êtes-vous sûr de vouloir supprimer le groupe "${groupName}" ? Cette action est irréversible.`)
-  if (!confirmed) return
-  
-  try {
-    const res = await groupsApi.delete(groupId)
-    if (res?.success) {
-      // Quitter la room socket
-      if (currentRoom.value) {
-        socketService.leaveRoom(currentRoom.value)
-        currentRoom.value = null
-      }
-      
-      // Return to list and reset
-      selectedGroup.value = null
-      showUserList.value = true
-      messages.value = []
-      
-      // Remove group from list
-      myGroups.value = myGroups.value.filter(g => g.id !== groupId)
-      
-      console.log('Group deleted successfully')
-    }
-  } catch (err) {
-    console.error('Failed to delete group:', err)
-    alert('Error deleting group: ' + (err.message || 'Unknown error'))
-  }
-}
-
-async function showGroupMembersModal() {
-  if (!selectedGroup.value) return
-  
-  try {
-    const res = await groupsApi.getById(selectedGroup.value.id)
-    if (res?.success && res.data) {
-      // Mettre à jour selectedGroup avec les détails complets
-      selectedGroup.value = { ...selectedGroup.value, ...res.data }
-      groupMembers.value = res.data.members || []
-      console.log('Group members loaded:', groupMembers.value)
-      showMembersModal.value = true
-    }
-  } catch (err) {
-    console.error('Failed to load group members:', err)
-    alert('Error loading members: ' + (err.message || 'Unknown error'))
-  }
-}
-
-function closeMembersModal() {
-  showMembersModal.value = false
-  groupMembers.value = []
-}
-
-async function leaveGroup() {
-  if (!selectedGroup.value || !currentUserId.value) return
-  
-  const groupId = selectedGroup.value.id
-  const groupName = selectedGroup.value.name
-  
-  const confirmed = confirm(`Are you sure you want to leave the group "${groupName}"?`)
-  if (!confirmed) return
-  
-  try {
-    const res = await groupsApi.removeMember(groupId, currentUserId.value)
-    if (res?.success) {
-      // Leave the socket room
-      if (currentRoom.value) {
-        socketService.leaveRoom(currentRoom.value)
-        currentRoom.value = null
-      }
-      
-      // Close modal and return to list
-      closeMembersModal()
-      selectedGroup.value = null
-      showUserList.value = true
-      messages.value = []
-      
-      // Remove group from list
-      myGroups.value = myGroups.value.filter(g => g.id !== groupId)
-      
-      console.log('You left the group')
-    }
-  } catch (err) {
-    console.error('Failed to leave group:', err)
-    alert('Error leaving group: ' + (err.message || 'Unknown error'))
-  }
-}
-
-async function onGroupCreated(group) {
-  // Add the new group to the list
-  myGroups.value.push({
-    ...group,
-    unreadCount: 0
-  })
-  
-  // Rejoindre automatiquement le groupe room
-  const room = `group-${group.id}`
-  socketService.joinRoom(room)
-  
-  // Ouvrir le groupe créé
-  selectGroupChat(group)
-}
-
-async function loadMessages() {
-  loading.value = true
-  try {
-    let data
-    if (selectedUser.value) {
-      data = await chatApi.getPrivateMessages(selectedUser.value.userId)
-    } else if (selectedGroup.value) {
-      data = await chatApi.getGroupMessages(selectedGroup.value.id)
-    } else {
-      messages.value = []
-      loading.value = false
-      return
-    }
-    
-    if (data?.success) {
-      messages.value = data.data
-      // Lors du chargement initial d'une conversation, on veut être en bas
-      atBottom.value = true
-      // Marquer tout comme lu
-      lastReadMessageId.value = messages.value.length ? messages.value[messages.value.length - 1].id : null
-      newMessagesStartIndex.value = null
-      newMessagesCount.value = 0
-      hasNewMessages.value = false
-      scrollToBottom()
-    }
-  } catch (error) {
-    console.error('Error loading messages:', error)
-  } finally {
-    loading.value = false
-  }
-}
-
-// Search functions
-function onSearchInput() {
-  // Clear previous timeout
-  if (searchDebounceTimeout.value) {
-    clearTimeout(searchDebounceTimeout.value)
-  }
-  
-  // Reset results if query is too short
-  if (!searchQuery.value || searchQuery.value.length < minSearchLength) {
-    searchResults.value = []
-    return
-  }
-  
-  // Debounce the search
-  searchDebounceTimeout.value = setTimeout(() => {
-    performSearch()
-  }, 300)
-}
-
-async function performSearch() {
-  if (!searchQuery.value || searchQuery.value.length < minSearchLength) {
-    searchResults.value = []
-    return
-  }
-  
-  searchLoading.value = true
-  try {
-    const res = await usersApi.search(searchQuery.value)
-    if (res?.success) {
-      // Filter out current user and map to display format
-      searchResults.value = res.data
-        .filter(u => u.id !== currentUserId.value)
-        .map(u => {
-          const isOnline = onlineUsers.value.some(ou => ou.userId === u.id)
-          return {
-            userId: u.id,
-            username: u.username,
-            online: isOnline,
-            unreadCount: unreadMap.value[u.id] || 0
-          }
-        })
-    }
-  } catch (err) {
-    console.error('Search failed:', err)
-    searchResults.value = []
-  } finally {
-    searchLoading.value = false
-  }
-}
-
-function clearSearch() {
-  searchQuery.value = ''
-  searchResults.value = []
-  if (searchDebounceTimeout.value) {
-    clearTimeout(searchDebounceTimeout.value)
-  }
-}
-
-// Recent conversations management
-function loadRecentConversations() {
-  try {
-    const stored = localStorage.getItem('chat-recent-conversations')
-    if (stored) {
-      const parsed = JSON.parse(stored)
-      recentUserIds.value = new Set(parsed)
-    }
-  } catch (err) {
-    console.error('Failed to load recent conversations:', err)
-    recentUserIds.value = new Set()
-  }
-}
-
-function saveRecentConversations() {
-  try {
-    const arr = Array.from(recentUserIds.value)
-    localStorage.setItem('chat-recent-conversations', JSON.stringify(arr))
-  } catch (err) {
-    console.error('Failed to save recent conversations:', err)
-  }
-}
-
-function handleNewPrivateMessage(message) {
-  // Vérifier si c'est un message de la conversation actuellement ouverte et visible
-  if (selectedUser.value && isOpen.value) {
-    const expectedRoom = [currentUserId.value, selectedUser.value.userId].sort().join('-')
-    if (message.room === expectedRoom) {
-      messages.value.push(message)
-      console.debug('[chat] new private message', {
-        id: message.id,
-        sender: message.sender,
-        currentUserId: currentUserId.value,
-        messagesLength: messages.value.length
-      })
-      // Ne scroller automatiquement que si l'utilisateur est déjà en bas
-      if (messagesContainer.value) {
-        if (isElementAtBottom(messagesContainer.value)) {
-          atBottom.value = true
-          scrollToBottom()
-          // marquer le message comme lu si on est en bas
-          lastReadMessageId.value = message.id
-        } else {
-          atBottom.value = false
-          // Si l'utilisateur n'est pas en bas et le message vient d'un autre utilisateur,
-          // afficher l'indicateur de nouveaux messages
-          if (message.sender !== currentUserId.value) {
-            console.debug('[chat] marking newMessagesStartIndex (first unread) at index', messages.value.length - 1)
-            // si c'est le premier nouveau message depuis la dernière lecture,
-            // enregistrer l'index où commencer la zone "Nouveaux messages"
-            if (newMessagesStartIndex.value === null) {
-              newMessagesStartIndex.value = messages.value.length - 1
-            }
-            hasNewMessages.value = true
-            newMessagesCount.value = (newMessagesCount.value || 0) + 1
-          }
-        }
-      } else {
-        // fallback si la ref n'est pas prête
-        scrollToBottom()
-      }
-      return
-    }
-  }
-  
-  // Message pour une autre conversation (ou chat fermé, ou conversation non visible)
-  if (message.sender !== currentUserId.value) {
-    // increment unread count for that sender
-    const sid = message.sender
-    const next = (unreadMap.value[sid] || 0) + 1
-    unreadMap.value = { ...unreadMap.value, [sid]: next }
-    console.debug('[chat] increment unread for', sid, '->', next)
-    
-    // Mettre à jour le badge dans recentConversations
-    const userInRecent = recentConversations.value.find(u => u.userId === sid)
-    if (userInRecent) {
-      userInRecent.unreadCount = next
-    }
-    
-    // Add the user to recent conversations
-    recentUserIds.value.add(sid)
-    saveRecentConversations()
-  }
-}
-
-function handleNewGroupMessage(message) {
-  // Vérifier si c'est un message du groupe actuellement ouvert et visible
-  if (selectedGroup.value && isOpen.value) {
-    const expectedRoom = `group-${selectedGroup.value.id}`
-    if (message.room === expectedRoom) {
-      messages.value.push(message)
-      console.debug('[chat] new group message', {
-        id: message.id,
-        sender: message.sender,
-        group: message.group,
-        messagesLength: messages.value.length
-      })
-      // Ne scroller automatiquement que si l'utilisateur est déjà en bas
-      if (messagesContainer.value) {
-        if (isElementAtBottom(messagesContainer.value)) {
-          atBottom.value = true
-          scrollToBottom()
-          lastReadMessageId.value = message.id
-        } else {
-          atBottom.value = false
-          if (message.sender !== currentUserId.value) {
-            if (newMessagesStartIndex.value === null) {
-              newMessagesStartIndex.value = messages.value.length - 1
-            }
-            hasNewMessages.value = true
-            newMessagesCount.value = (newMessagesCount.value || 0) + 1
-          }
-        }
-      } else {
-        scrollToBottom()
-      }
-      return
-    }
-  }
-  
-  // Message pour un autre groupe (ou chat fermé)
-  if (message.sender !== currentUserId.value && message.group) {
-    // Incrémenter le compteur de messages non lus pour ce groupe
-    const gid = message.group
-    const next = (groupUnreadMap.value[gid] || 0) + 1
-    groupUnreadMap.value = { ...groupUnreadMap.value, [gid]: next }
-    console.debug('[chat] increment group unread for', gid, '->', next)
-    
-    // Mettre à jour le compteur dans myGroups de manière réactive
-    const groupIndex = myGroups.value.findIndex(g => g.id === gid)
-    if (groupIndex !== -1) {
-      myGroups.value = myGroups.value.map((g, idx) => 
-        idx === groupIndex ? { ...g, unreadCount: next } : g
-      )
-    }
-  }
-}
-
-function handleUpdatedPrivateMessage(message) {
-  // Mettre à jour le message existant dans la vue si il appartient à la room actuelle
-  try {
-    if (selectedUser.value) {
-      const expectedRoom = [currentUserId.value, selectedUser.value.userId].sort().join('-')
-      if (message.room === expectedRoom) {
-        const idx = messages.value.findIndex(m => (m.id || m._id) === (message.id || message._id))
-        if (idx !== -1) {
-          // merger les champs importants
-          messages.value[idx].content = message.content
-          messages.value[idx].edited = true
-          messages.value[idx].editedAt = message.editedAt || new Date().toISOString()
-        }
-      }
-    }
-  } catch (err) {
-    console.error('Error handling updated private message', err)
-  }
-}
-
-function handleDeletedPrivateMessage(message) {
-  try {
-    if (selectedUser.value) {
-      const expectedRoom = [currentUserId.value, selectedUser.value.userId].sort().join('-')
-      if (message.room === expectedRoom) {
-        const idx = messages.value.findIndex(m => (m.id || m._id) === (message.id || message._id))
-        if (idx !== -1) {
-          // remove the message from the array (hard delete)
-          messages.value.splice(idx, 1)
-        }
-      }
-    }
-  } catch (err) {
-    console.error('Error handling deleted private message', err)
-  }
-}
-
-function handleOnlineUsers(users) {
-  onlineUsers.value = users
-}
-
-function handleUserConnected(data) {
-  onlineUsers.value = data.connectedUsers
-}
-
-function handleUserDisconnected(data) {
-  onlineUsers.value = data.connectedUsers
-  typingUsers.value = typingUsers.value.filter(u => u !== data.username)
-}
-
-function handleTypingUpdate(data) {
-  // Vérifier que c'est pour la room actuelle
-  if (data.room !== currentRoom.value) return
-  
-  if (data.isTyping) {
-    if (!typingUsers.value.includes(data.username)) {
-      typingUsers.value.push(data.username)
-    }
-  } else {
-    typingUsers.value = typingUsers.value.filter(u => u !== data.username)
-  }
-}
-
-function handleGroupMemberAdded(data) {
-  // If it's for the current user, add the group to the list
-  if (data.userId === currentUserId.value) {
-    console.debug('[chat] added to group', data.group.name)
-    // Add the group to the list
-    if (!myGroups.value.some(g => g.id === data.group.id)) {
-      myGroups.value.push({
-        ...data.group,
-        unreadCount: 0
-      })
-      // Automatically join the group room
-      socketService.joinRoom(`group-${data.group.id}`)
-    }
-  }
-  // If we're already in this group, reload the info
-  else if (selectedGroup.value?.id === data.groupId) {
-    // Optional: reload group details to see new members
-    loadGroups()
-  }
-}
-
-function handleGroupDeleted(data) {
-  // If it's for the current user, remove the group from the list
-  if (data.userId === currentUserId.value) {
-    console.debug('[chat] group deleted', data.groupId)
-    
-    // Remove the group from the list
-    myGroups.value = myGroups.value.filter(g => g.id !== data.groupId)
-    
-    // If we're in this group, return to list
-    if (selectedGroup.value?.id === data.groupId) {
-      // Leave the socket room
-      if (currentRoom.value) {
-        socketService.leaveRoom(currentRoom.value)
-        currentRoom.value = null
-      }
-      
-      selectedGroup.value = null
-      showUserList.value = true
-      messages.value = []
-    }
-  }
-}
-
-function handleGroupMemberRemoved(data) {
-  // If the current user was removed, remove the group from the list
-  if (data.userId === currentUserId.value) {
-    console.debug('[chat] removed from group', data.groupId)
-    
-    // Remove the group from the list
-    myGroups.value = myGroups.value.filter(g => g.id !== data.groupId)
-    
-    // If we're in this group, return to list
-    if (selectedGroup.value?.id === data.groupId) {
-      // Leave the socket room
-      if (currentRoom.value) {
-        socketService.leaveRoom(currentRoom.value)
-        currentRoom.value = null
-      }
-      
-      selectedGroup.value = null
-      showUserList.value = true
-      messages.value = []
-    }
-  }
-  // If we're in the group and another member was removed, update the member list
-  else if (selectedGroup.value?.id === data.groupId && showMembersModal.value) {
-    // Reload the member list if the modal is open
-    showGroupMembersModal()
-  }
-}
-
-function handleError(error) {
-  console.error('Socket error:', error)
-}
-
-function sendMessage() {
-  if (!newMessage.value.trim()) return
-  
-  if (selectedUser.value) {
-    // Message privé
-    if (selectedUser.value.userId === currentUserId.value) return
-    socketService.sendPrivateMessage(newMessage.value.trim(), selectedUser.value.userId)
-  } else if (selectedGroup.value) {
-    // Message de groupe
-    socketService.sendGroupMessage(newMessage.value.trim(), selectedGroup.value.id)
-  } else {
-    return
-  }
-
-  newMessage.value = ''
-  stopTyping()
-}
-
-function handleTyping() {
-  if (typingTimeout.value) {
-    clearTimeout(typingTimeout.value)
-  }
-
-  // Supporter les conversations privées et les groupes
-  if (!selectedUser.value && !selectedGroup.value) return
-  
-  // Utiliser currentRoom si disponible, sinon calculer
-  let room = currentRoom.value
-  if (!room) {
-    if (selectedUser.value) {
-      room = [currentUserId.value, selectedUser.value.userId].sort().join('-')
-    } else if (selectedGroup.value) {
-      room = `group-${selectedGroup.value.id}`
-    }
-  }
-  
-  if (room) {
-    socketService.startTyping(room)
-  }
-
-  typingTimeout.value = setTimeout(() => {
-    stopTyping()
-  }, 2000)
-}
-
-// Emoji picker state and helpers
-const emojis = ['😀','😂','😊','😍','😢','👍','🎉','🔥','🚀','🤝']
-const showEmojiPicker = ref(false)
-const messageInput = ref(null)
-const emojiWrapper = ref(null)
-
-// Edition de message
-const editingMessageId = ref(null)
-const editingContent = ref('')
-
-function startEdit(message) {
-  if (!message || message.sender !== currentUserId.value) return
-  editingMessageId.value = message.id || message._id
-  editingContent.value = message.content
-  // focus after next tick if desired
-  nextTick(() => {
-    const el = document.getElementById(`edit-input-${editingMessageId.value}`)
-    if (el) el.focus()
-  })
-}
-
-function cancelEdit() {
-  editingMessageId.value = null
-  editingContent.value = ''
-}
-
-async function submitEdit(message) {
-  if (!editingMessageId.value) return
-  const trimmed = (editingContent.value || '').trim()
-  if (!trimmed) return
-  try {
-    const res = await chatApi.updateMessage(editingMessageId.value, trimmed)
-    if (res?.success && res.data) {
-      // Update local message
-      const idx = messages.value.findIndex(m => (m.id || m._id) === editingMessageId.value)
-      if (idx !== -1) {
-        messages.value[idx].content = res.data.content
-        messages.value[idx].edited = true
-        messages.value[idx].editedAt = res.data.editedAt
-      }
-      // clear editing state
-      cancelEdit()
-    }
-  } catch (err) {
-    console.error('Failed to update message', err)
-  }
-}
-
-
-async function submitDelete(message) {
-  if (!message) return
-  // Only allow deleting own messages
-  if (message.sender !== currentUserId.value) return
-  const ok = window.confirm('Supprimer ce message ? Cette action est irréversible.')
-  if (!ok) return
-  try {
-    const res = await chatApi.deleteMessage(message.id || message._id)
-    if (res?.success && res.data) {
-      const idx = messages.value.findIndex(m => (m.id || m._id) === (res.data.id || res.data._id))
-      if (idx !== -1) {
-        // remove from local messages (hard delete)
-        messages.value.splice(idx, 1)
-      }
-    }
-  } catch (err) {
-    console.error('Failed to delete message', err)
-  }
-}
-function toggleEmojiPicker() {
-  showEmojiPicker.value = !showEmojiPicker.value
-  if (showEmojiPicker.value) {
-    // focus input so selection positions are available
-    nextTick(() => messageInput.value && messageInput.value.focus())
-  }
-}
-
-function insertEmoji(emoji) {
-  const input = messageInput.value
-  if (input && typeof input.selectionStart === 'number') {
-    const start = input.selectionStart
-    const end = input.selectionEnd
-    const val = newMessage.value || ''
-    newMessage.value = val.slice(0, start) + emoji + val.slice(end)
-    nextTick(() => {
-      const pos = start + emoji.length
-      try { input.setSelectionRange(pos, pos) } catch (e) { /* ignore */ }
-      input.focus()
-    })
-  } else {
-    newMessage.value = (newMessage.value || '') + emoji
-    nextTick(() => messageInput.value && messageInput.value.focus())
-  }
-  showEmojiPicker.value = false
-}
-
-function hideIfClickedOutside(e) {
-  if (!emojiWrapper.value) return
-  if (!emojiWrapper.value.contains(e.target)) {
-    showEmojiPicker.value = false
-  }
-}
-
-function stopTyping() {
-  if (typingTimeout.value) {
-    clearTimeout(typingTimeout.value)
-    typingTimeout.value = null
-  }
-  
-  // Supporter les conversations privées et les groupes
-  if (!selectedUser.value && !selectedGroup.value) return
-  
-  // Utiliser currentRoom si disponible, sinon calculer
-  let room = currentRoom.value
-  if (!room) {
-    if (selectedUser.value) {
-      room = [currentUserId.value, selectedUser.value.userId].sort().join('-')
-    } else if (selectedGroup.value) {
-      room = `group-${selectedGroup.value.id}`
-    }
-  }
-  
-  if (room) {
-    socketService.stopTyping(room)
-  }
-}
-
-function handleClickNewMessages() {
-  hasNewMessages.value = false
-  newMessagesCount.value = 0
-  atBottom.value = true
-  // Smooth scroll to bottom
-  scrollToBottom(true)
-  // Marquer tout comme lu
-  newMessagesStartIndex.value = null
-  lastReadMessageId.value = messages.value.length ? messages.value[messages.value.length - 1].id : null
-}
-
-function formatTime(dateString) {
-  const date = new Date(dateString)
-  return date.toLocaleTimeString('fr-FR', { 
-    hour: '2-digit', 
-    minute: '2-digit' 
-  })
-}
-
-const messagesContainer = ref(null)
-const atBottom = ref(true)
-const hasNewMessages = ref(false)
-const newMessagesCount = ref(0)
-const newMessagesStartIndex = ref(null)
-const lastReadMessageId = ref(null)
-
-function isElementAtBottom(el, threshold = 20) {
-  if (!el) return true
-  const distance = el.scrollHeight - (el.scrollTop + el.clientHeight)
-  return distance <= threshold
-}
-
-function onMessagesContainerScroll() {
-  if (!messagesContainer.value) return
-  const wasAtBottom = atBottom.value
-  atBottom.value = isElementAtBottom(messagesContainer.value)
-  // If user scrolled to bottom, clear new message indicator
-  if (atBottom.value && !wasAtBottom) {
-    console.debug('[chat] user scrolled to bottom — clearing new messages markers', {
-      messagesLength: messages.value.length
-    })
-    hasNewMessages.value = false
-    newMessagesCount.value = 0
-    newMessagesStartIndex.value = null
-    // marquer le dernier message comme lu
-    lastReadMessageId.value = messages.value.length ? messages.value[messages.value.length - 1].id : null
-  }
-}
-
-function scrollToBottom(smooth = false) {
-  nextTick(() => {
-    if (messagesContainer.value) {
-      const top = messagesContainer.value.scrollHeight
-      if (smooth && typeof messagesContainer.value.scrollTo === 'function') {
-        messagesContainer.value.scrollTo({ top, behavior: 'smooth' })
-      } else {
-        messagesContainer.value.scrollTop = top
-      }
-    }
-  })
-}
-
-// Attacher/détacher l'écouteur de scroll quand l'élément est rendu
-watch(messagesContainer, (el, oldEl) => {
-  if (oldEl) oldEl.removeEventListener('scroll', onMessagesContainerScroll)
-  if (el) el.addEventListener('scroll', onMessagesContainerScroll)
-}, { immediate: true })
-
-// Lifecycle
-onMounted(() => {
-  // Auto-connect si déjà authentifié
-  if (authStore.token.value) {
-    connectSocket()
-  }
-
-  // Déconnecter si l'utilisateur se déconnecte
-  watch(() => authStore.token.value, (val) => {
-    if (!val) {
-      socketService.disconnect()
-      messages.value = []
-      onlineUsers.value = []
-      unreadMap.value = {}
-      selectedUser.value = null
-      currentView.value = 'private'
-    } else {
-      // On re-connecte automatiquement si un token revient (login)
-      connectSocket()
-      loadMessages()
-    }
-  })
-})
-
-// Listen for clicks outside the emoji area to hide the picker
-onMounted(() => {
-  document.addEventListener('click', hideIfClickedOutside)
-})
-
-onUnmounted(() => {
-  socketService.removeAllListeners()
-  if (typingTimeout.value) {
-    clearTimeout(typingTimeout.value)
-  }
-  if (searchDebounceTimeout.value) {
-    clearTimeout(searchDebounceTimeout.value)
-  }
-  if (currentRoom.value) {
-    socketService.leaveRoom(currentRoom.value)
-    currentRoom.value = null
-  }
-  // Detach scroll listener if still attached
-  if (messagesContainer.value) {
-    messagesContainer.value.removeEventListener('scroll', onMessagesContainerScroll)
-  }
-  // Remove outside-click listener for emoji picker
-  document.removeEventListener('click', hideIfClickedOutside)
-})
-
-// Watchers
-watch(messages, () => {
-  if (atBottom.value) scrollToBottom()
-}, { deep: true })
-</script>
-
 <style scoped>
 .new-messages-indicator {
   position: absolute;
@@ -1526,7 +1532,6 @@ watch(messages, () => {
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: background 0.2s;
 }
 
 .btn-icon:hover {
@@ -1599,7 +1604,6 @@ watch(messages, () => {
   align-items: center;
   justify-content: center;
   border-radius: 4px;
-  transition: background 0.2s, color 0.2s;
 }
 
 .clear-search-btn:hover {
@@ -1652,7 +1656,6 @@ watch(messages, () => {
   border-radius: 8px;
   cursor: pointer;
   text-align: left;
-  transition: background 0.2s;
 }
 
 .user-item:hover {
@@ -1810,7 +1813,7 @@ watch(messages, () => {
   justify-content: center;
 }
 
-/* Styles pour rendre les boutons lisibles sur fonds colorés */
+/* Styles to make buttons readable on colored backgrounds */
 .message-actions .btn-icon.small {
   background: rgba(255,255,255,0.95);
   border: 1px solid rgba(15,23,42,0.06);
@@ -1820,12 +1823,12 @@ watch(messages, () => {
 }
 
 .message .message-content {
-  /* s'assurer que le contenu n'est pas couvert par les boutons */
+  /* ensure content is not covered by action buttons */
   position: relative;
   z-index: 1;
 }
 
-/* Variante pour petits écrans : réduire l'espace des actions */
+/* Responsive */
 @media (max-width: 480px) {
   .message {
     padding-top: 12px;
@@ -2086,7 +2089,6 @@ watch(messages, () => {
   display: flex;
   align-items: center;
   border-radius: 4px;
-  transition: background 0.2s;
 }
 
 .btn-close:hover {
