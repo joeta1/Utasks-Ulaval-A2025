@@ -27,6 +27,22 @@
               <polyline points="15 18 9 12 15 6"></polyline>
             </svg>
           </button>
+          <button v-if="selectedGroup" @click="showGroupMembersModal" class="btn-icon" title="Voir les membres">
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+              <circle cx="9" cy="7" r="4"></circle>
+              <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+              <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+            </svg>
+          </button>
+          <button v-if="selectedGroup && isGroupCreator" @click="deleteGroup" class="btn-icon btn-delete" title="Supprimer le groupe">
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="3 6 5 6 21 6"></polyline>
+              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+              <line x1="10" y1="11" x2="10" y2="17"></line>
+              <line x1="14" y1="11" x2="14" y2="17"></line>
+            </svg>
+          </button>
           <button @click="toggleChat" class="btn-icon btn-close" title="Fermer">
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <line x1="18" y1="6" x2="6" y2="18"></line>
@@ -175,7 +191,12 @@
 
               <div class="message" :class="{ 'own-message': message.sender === currentUserId }">
                 <div class="message-header">
-                  <span class="message-sender">{{ message.senderUsername }}</span>
+                  <span 
+                    class="message-sender" 
+                    :style="selectedGroup && message.sender !== currentUserId ? { color: getUserColor(message.sender) } : {}"
+                  >
+                    {{ message.senderUsername }}
+                  </span>
                   <span class="message-time">{{ formatTime(message.createdAt) }}</span>
                 </div>
 
@@ -209,6 +230,11 @@
           
           <!-- Indicateur de frappe -->
           <div v-if="typingUsers.length > 0" class="typing-indicator">
+            <div class="typing-dots">
+              <span></span>
+              <span></span>
+              <span></span>
+            </div>
             <span>{{ typingUsers.join(', ') }} {{ typingUsers.length > 1 ? 'écrivent' : 'écrit' }}...</span>
           </div>
         </div>
@@ -261,6 +287,43 @@
         @close="showGroupModal = false"
         @created="onGroupCreated"
       />
+      
+      <!-- Group Members Modal -->
+      <div v-if="showMembersModal" class="modal-overlay" @click="closeMembersModal">
+        <div class="modal-container members-modal" @click.stop>
+          <div class="modal-header">
+            <h3>Membres du groupe</h3>
+            <button @click="closeMembersModal" class="btn-close">
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="18" y1="6" x2="6" y2="18"></line>
+                <line x1="6" y1="6" x2="18" y2="18"></line>
+              </svg>
+            </button>
+          </div>
+          
+          <div class="modal-body">
+            <div class="members-list">
+              <div v-for="member in groupMembers" :key="member.id" class="member-item">
+                <span class="member-avatar">{{ (member.username || 'U').charAt(0).toUpperCase() }}</span>
+                <span class="member-name">{{ member.username || 'Utilisateur' }}</span>
+                <span v-if="member.id === selectedGroup?.creator?.id || member.id === selectedGroup?.creator" class="member-badge">Créateur</span>
+                <span v-else-if="member.id === currentUserId" class="member-badge-me">Vous</span>
+              </div>
+            </div>
+            
+            <div v-if="!isGroupCreator" class="leave-group-section">
+              <button @click="leaveGroup" class="btn-leave-group">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+                  <polyline points="16 17 21 12 16 7"></polyline>
+                  <line x1="21" y1="12" x2="9" y2="12"></line>
+                </svg>
+                <span>Quitter le groupe</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 </template>
@@ -286,7 +349,9 @@ const selectedUser = ref(null)
 const selectedGroup = ref(null)
 const unreadMap = ref({})
 const unreadCount = computed(() => {
-  return Object.values(unreadMap.value).reduce((s, v) => s + (v || 0), 0)
+  const privateUnread = Object.values(unreadMap.value).reduce((s, v) => s + (v || 0), 0)
+  const groupUnread = Object.values(groupUnreadMap.value).reduce((s, v) => s + (v || 0), 0)
+  return privateUnread + groupUnread
 })
 const typingTimeout = ref(null)
 const currentRoom = ref(null)
@@ -294,6 +359,8 @@ const currentRoom = ref(null)
 // Group state
 const myGroups = ref([])
 const showGroupModal = ref(false)
+const showMembersModal = ref(false)
+const groupMembers = ref([])
 const groupUnreadMap = ref({})
 
 // Search state
@@ -316,6 +383,12 @@ const headerTitle = computed(() => {
     return `Chat avec ${selectedUser.value.username}`
   }
   return 'Sélectionnez une conversation'
+})
+
+const isGroupCreator = computed(() => {
+  if (!selectedGroup.value) return false
+  const creatorId = selectedGroup.value.creator?.id || selectedGroup.value.creator
+  return creatorId === currentUserId.value
 })
 
 const displayedUsers = computed(() => {
@@ -346,6 +419,37 @@ const recentConversations = computed(() => {
     .sort((a, b) => (b.unreadCount || 0) - (a.unreadCount || 0)) // Priorité aux messages non lus
   return recent
 })
+
+// Générer une couleur basée sur l'ID de l'utilisateur
+function getUserColor(userId) {
+  if (!userId) return '#667eea'
+  
+  // Palette de couleurs distinctes et agréables
+  const colors = [
+    '#667eea', // violet
+    '#10b981', // vert
+    '#f59e0b', // orange
+    '#ef4444', // rouge
+    '#3b82f6', // bleu
+    '#8b5cf6', // purple
+    '#ec4899', // pink
+    '#14b8a6', // teal
+    '#f97316', // orange foncé
+    '#06b6d4', // cyan
+    '#84cc16', // lime
+    '#6366f1', // indigo
+  ]
+  
+  // Hash simple de l'userId pour obtenir un index
+  let hash = 0
+  const str = userId.toString()
+  for (let i = 0; i < str.length; i++) {
+    hash = str.charCodeAt(i) + ((hash << 5) - hash)
+  }
+  
+  const index = Math.abs(hash) % colors.length
+  return colors[index]
+}
 
 // Methods
 async function toggleChat() {
@@ -446,6 +550,9 @@ async function connectSocket() {
   // Écouter les événements (private and group)
   socketService.on('message:private:received', handleNewPrivateMessage)
   socketService.on('message:group:received', handleNewGroupMessage)
+  socketService.on('group:member:added', handleGroupMemberAdded)
+  socketService.on('group:member:removed', handleGroupMemberRemoved)
+  socketService.on('group:deleted', handleGroupDeleted)
   socketService.on('users:online', handleOnlineUsers)
   socketService.on('user:connected', handleUserConnected)
   socketService.on('user:disconnected', handleUserDisconnected)
@@ -505,6 +612,98 @@ async function loadGroups() {
 
 function openGroupModal() {
   showGroupModal.value = true
+}
+
+async function deleteGroup() {
+  if (!selectedGroup.value) return
+  
+  const groupId = selectedGroup.value.id
+  const groupName = selectedGroup.value.name
+  
+  const confirmed = confirm(`Êtes-vous sûr de vouloir supprimer le groupe "${groupName}" ? Cette action est irréversible.`)
+  if (!confirmed) return
+  
+  try {
+    const res = await groupsApi.delete(groupId)
+    if (res?.success) {
+      // Quitter la room socket
+      if (currentRoom.value) {
+        socketService.leaveRoom(currentRoom.value)
+        currentRoom.value = null
+      }
+      
+      // Revenir à la liste et réinitialiser
+      selectedGroup.value = null
+      showUserList.value = true
+      messages.value = []
+      
+      // Retirer le groupe de la liste
+      myGroups.value = myGroups.value.filter(g => g.id !== groupId)
+      
+      console.log('Groupe supprimé avec succès')
+    }
+  } catch (err) {
+    console.error('Failed to delete group:', err)
+    alert('Erreur lors de la suppression du groupe: ' + (err.message || 'Erreur inconnue'))
+  }
+}
+
+async function showGroupMembersModal() {
+  if (!selectedGroup.value) return
+  
+  try {
+    const res = await groupsApi.getById(selectedGroup.value.id)
+    if (res?.success && res.data) {
+      // Mettre à jour selectedGroup avec les détails complets
+      selectedGroup.value = { ...selectedGroup.value, ...res.data }
+      groupMembers.value = res.data.members || []
+      console.log('Group members loaded:', groupMembers.value)
+      showMembersModal.value = true
+    }
+  } catch (err) {
+    console.error('Failed to load group members:', err)
+    alert('Erreur lors du chargement des membres: ' + (err.message || 'Erreur inconnue'))
+  }
+}
+
+function closeMembersModal() {
+  showMembersModal.value = false
+  groupMembers.value = []
+}
+
+async function leaveGroup() {
+  if (!selectedGroup.value || !currentUserId.value) return
+  
+  const groupId = selectedGroup.value.id
+  const groupName = selectedGroup.value.name
+  
+  const confirmed = confirm(`Êtes-vous sûr de vouloir quitter le groupe "${groupName}" ?`)
+  if (!confirmed) return
+  
+  try {
+    const res = await groupsApi.removeMember(groupId, currentUserId.value)
+    if (res?.success) {
+      // Quitter la room socket
+      if (currentRoom.value) {
+        socketService.leaveRoom(currentRoom.value)
+        currentRoom.value = null
+      }
+      
+      // Fermer le modal et revenir à la liste
+      closeMembersModal()
+      selectedGroup.value = null
+      showUserList.value = true
+      messages.value = []
+      
+      // Retirer le groupe de la liste
+      myGroups.value = myGroups.value.filter(g => g.id !== groupId)
+      
+      console.log('Vous avez quitté le groupe')
+    }
+  } catch (err) {
+    console.error('Failed to leave group:', err)
+    alert('Erreur lors de la sortie du groupe: ' + (err.message || 'Erreur inconnue'))
+  }
 }
 
 async function onGroupCreated(group) {
@@ -685,6 +884,12 @@ function handleNewPrivateMessage(message) {
     unreadMap.value = { ...unreadMap.value, [sid]: next }
     console.debug('[chat] increment unread for', sid, '->', next)
     
+    // Mettre à jour le badge dans recentConversations
+    const userInRecent = recentConversations.value.find(u => u.userId === sid)
+    if (userInRecent) {
+      userInRecent.unreadCount = next
+    }
+    
     // Ajouter l'utilisateur aux conversations récentes
     recentUserIds.value.add(sid)
     saveRecentConversations()
@@ -734,10 +939,12 @@ function handleNewGroupMessage(message) {
     groupUnreadMap.value = { ...groupUnreadMap.value, [gid]: next }
     console.debug('[chat] increment group unread for', gid, '->', next)
     
-    // Mettre à jour le compteur dans myGroups
+    // Mettre à jour le compteur dans myGroups de manière réactive
     const groupIndex = myGroups.value.findIndex(g => g.id === gid)
     if (groupIndex !== -1) {
-      myGroups.value[groupIndex].unreadCount = next
+      myGroups.value = myGroups.value.map((g, idx) => 
+        idx === groupIndex ? { ...g, unreadCount: next } : g
+      )
     }
   }
 }
@@ -793,12 +1000,87 @@ function handleUserDisconnected(data) {
 }
 
 function handleTypingUpdate(data) {
+  // Vérifier que c'est pour la room actuelle
+  if (data.room !== currentRoom.value) return
+  
   if (data.isTyping) {
     if (!typingUsers.value.includes(data.username)) {
       typingUsers.value.push(data.username)
     }
   } else {
     typingUsers.value = typingUsers.value.filter(u => u !== data.username)
+  }
+}
+
+function handleGroupMemberAdded(data) {
+  // Si c'est pour l'utilisateur actuel, ajouter le groupe à la liste
+  if (data.userId === currentUserId.value) {
+    console.debug('[chat] added to group', data.group.name)
+    // Ajouter le groupe à la liste
+    if (!myGroups.value.some(g => g.id === data.group.id)) {
+      myGroups.value.push({
+        ...data.group,
+        unreadCount: 0
+      })
+      // Rejoindre automatiquement la room du groupe
+      socketService.joinRoom(`group-${data.group.id}`)
+    }
+  }
+  // Si on est déjà dans ce groupe, recharger les infos
+  else if (selectedGroup.value?.id === data.groupId) {
+    // Optionnel : recharger les détails du groupe pour voir les nouveaux membres
+    loadGroups()
+  }
+}
+
+function handleGroupDeleted(data) {
+  // Si c'est pour l'utilisateur actuel, retirer le groupe de la liste
+  if (data.userId === currentUserId.value) {
+    console.debug('[chat] group deleted', data.groupId)
+    
+    // Retirer le groupe de la liste
+    myGroups.value = myGroups.value.filter(g => g.id !== data.groupId)
+    
+    // Si on est dans ce groupe, revenir à la liste
+    if (selectedGroup.value?.id === data.groupId) {
+      // Quitter la room socket
+      if (currentRoom.value) {
+        socketService.leaveRoom(currentRoom.value)
+        currentRoom.value = null
+      }
+      
+      selectedGroup.value = null
+      showUserList.value = true
+      messages.value = []
+    }
+  }
+}
+
+function handleGroupMemberRemoved(data) {
+  // Si c'est l'utilisateur actuel qui a été retiré, retirer le groupe de la liste
+  if (data.userId === currentUserId.value) {
+    console.debug('[chat] removed from group', data.groupId)
+    
+    // Retirer le groupe de la liste
+    myGroups.value = myGroups.value.filter(g => g.id !== data.groupId)
+    
+    // Si on est dans ce groupe, revenir à la liste
+    if (selectedGroup.value?.id === data.groupId) {
+      // Quitter la room socket
+      if (currentRoom.value) {
+        socketService.leaveRoom(currentRoom.value)
+        currentRoom.value = null
+      }
+      
+      selectedGroup.value = null
+      showUserList.value = true
+      messages.value = []
+    }
+  }
+  // Si on est dans le groupe et qu'un autre membre a été retiré, mettre à jour la liste des membres
+  else if (selectedGroup.value?.id === data.groupId && showMembersModal.value) {
+    // Recharger la liste des membres si le modal est ouvert
+    showGroupMembersModal()
   }
 }
 
@@ -829,10 +1111,22 @@ function handleTyping() {
     clearTimeout(typingTimeout.value)
   }
 
-  if (!selectedUser.value) return
-  // Use currentRoom if available
-  const room = currentRoom.value || [currentUserId.value, selectedUser.value.userId].sort().join('-')
-  socketService.startTyping(room)
+  // Supporter les conversations privées et les groupes
+  if (!selectedUser.value && !selectedGroup.value) return
+  
+  // Utiliser currentRoom si disponible, sinon calculer
+  let room = currentRoom.value
+  if (!room) {
+    if (selectedUser.value) {
+      room = [currentUserId.value, selectedUser.value.userId].sort().join('-')
+    } else if (selectedGroup.value) {
+      room = `group-${selectedGroup.value.id}`
+    }
+  }
+  
+  if (room) {
+    socketService.startTyping(room)
+  }
 
   typingTimeout.value = setTimeout(() => {
     stopTyping()
@@ -946,9 +1240,23 @@ function stopTyping() {
     clearTimeout(typingTimeout.value)
     typingTimeout.value = null
   }
-  if (!selectedUser.value) return
-  const room = currentRoom.value || [currentUserId.value, selectedUser.value.userId].sort().join('-')
-  socketService.stopTyping(room)
+  
+  // Supporter les conversations privées et les groupes
+  if (!selectedUser.value && !selectedGroup.value) return
+  
+  // Utiliser currentRoom si disponible, sinon calculer
+  let room = currentRoom.value
+  if (!room) {
+    if (selectedUser.value) {
+      room = [currentUserId.value, selectedUser.value.userId].sort().join('-')
+    } else if (selectedGroup.value) {
+      room = `group-${selectedGroup.value.id}`
+    }
+  }
+  
+  if (room) {
+    socketService.stopTyping(room)
+  }
 }
 
 function handleClickNewMessages() {
@@ -1224,6 +1532,14 @@ watch(messages, () => {
 
 .btn-icon:hover {
   background: rgba(255, 255, 255, 0.3);
+}
+
+.btn-icon.btn-delete {
+  background: rgba(239, 68, 68, 0.2);
+}
+
+.btn-icon.btn-delete:hover {
+  background: rgba(239, 68, 68, 0.3);
 }
 
 .chat-body {
@@ -1562,6 +1878,46 @@ watch(messages, () => {
   font-size: 12px;
   color: #64748b;
   font-style: italic;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.typing-dots {
+  display: inline-flex;
+  gap: 3px;
+  align-items: center;
+}
+
+.typing-dots span {
+  width: 6px;
+  height: 6px;
+  background: #64748b;
+  border-radius: 50%;
+  animation: typing-bounce 1.4s infinite ease-in-out;
+}
+
+.typing-dots span:nth-child(1) {
+  animation-delay: 0s;
+}
+
+.typing-dots span:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+.typing-dots span:nth-child(3) {
+  animation-delay: 0.4s;
+}
+
+@keyframes typing-bounce {
+  0%, 60%, 100% {
+    transform: translateY(0);
+    opacity: 0.7;
+  }
+  30% {
+    transform: translateY(-8px);
+    opacity: 1;
+  }
 }
 
 .chat-footer {
@@ -1679,5 +2035,162 @@ watch(messages, () => {
   .chat-panel {
     width: 600px;
   }
+}
+
+/* Modal Base Styles */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2000;
+  padding: 20px;
+}
+
+.modal-container {
+  background: white;
+  border-radius: 12px;
+  width: 100%;
+  max-width: 500px;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+}
+
+.modal-header {
+  padding: 20px;
+  border-bottom: 1px solid #e2e8f0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.modal-header h3 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: #1e293b;
+}
+
+.btn-close {
+  background: transparent;
+  border: none;
+  color: #64748b;
+  cursor: pointer;
+  padding: 4px;
+  display: flex;
+  align-items: center;
+  border-radius: 4px;
+  transition: background 0.2s;
+}
+
+.btn-close:hover {
+  background: #f1f5f9;
+}
+
+.modal-body {
+  padding: 20px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+/* Members Modal Styles */
+.members-modal {
+  max-width: 450px;
+  width: 90%;
+}
+
+.members-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 400px;
+  overflow-y: auto;
+  margin-bottom: 16px;
+}
+
+.member-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  background: #f8fafc;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+}
+
+.member-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 600;
+  font-size: 14px;
+  flex-shrink: 0;
+}
+
+.member-name {
+  flex: 1;
+  font-weight: 500;
+  color: #1e293b;
+}
+
+.member-badge {
+  padding: 4px 8px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.member-badge-me {
+  padding: 4px 8px;
+  background: #e2e8f0;
+  color: #64748b;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.leave-group-section {
+  padding-top: 16px;
+  border-top: 1px solid #e2e8f0;
+}
+
+.btn-leave-group {
+  width: 100%;
+  padding: 12px 16px;
+  background: #fee2e2;
+  color: #dc2626;
+  border: 1px solid #fca5a5;
+  border-radius: 8px;
+  font-weight: 500;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  transition: all 0.2s;
+}
+
+.btn-leave-group:hover {
+  background: #fecaca;
+  border-color: #f87171;
+}
+
+.btn-leave-group svg {
+  flex-shrink: 0;
 }
 </style>

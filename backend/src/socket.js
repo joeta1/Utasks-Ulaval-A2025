@@ -167,13 +167,14 @@ function initializeSocket(server) {
       }
     });
 
-    // Indicateur de frappe (seulement pour rooms privées)
+    // Indicateur de frappe (pour rooms privées et groupes)
     socket.on('typing:start', (data) => {
       const { room } = data;
       if (!room) return;
       socket.to(room).emit('typing:update', {
         userId: socket.userId,
         username: socket.username,
+        room: room,
         isTyping: true
       });
     });
@@ -184,6 +185,7 @@ function initializeSocket(server) {
       socket.to(room).emit('typing:update', {
         userId: socket.userId,
         username: socket.username,
+        room: room,
         isTyping: false
       });
     });

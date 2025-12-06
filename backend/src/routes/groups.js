@@ -41,6 +41,20 @@ router.post('/', authMiddleware, async (req, res) => {
     await group.populate('members', 'username');
     await group.populate('creator', 'username');
     
+    // Émettre un événement socket pour notifier les membres ajoutés (sauf le créateur)
+    if (members.length > 1) {
+      const io = require('../socket').getIO();
+      members.forEach(memberId => {
+        if (memberId !== req.userId) {
+          io.emit('group:member:added', {
+            groupId: group._id.toString(),
+            group: group.toJSON(),
+            userId: memberId
+          });
+        }
+      });
+    }
+    
     res.status(201).json({
       success: true,
       data: group.toJSON()
@@ -80,9 +94,7 @@ router.get('/', authMiddleware, async (req, res) => {
 // GET /api/groups/:id - Obtenir les détails d'un groupe
 router.get('/:id', authMiddleware, async (req, res) => {
   try {
-    const group = await Group.findById(req.params.id)
-      .populate('members', 'username')
-      .populate('creator', 'username');
+    const group = await Group.findById(req.params.id);
     
     if (!group) {
       return res.status(404).json({
@@ -91,13 +103,17 @@ router.get('/:id', authMiddleware, async (req, res) => {
       });
     }
     
-    // Vérifier que l'utilisateur est membre
+    // Vérifier que l'utilisateur est membre (avant populate)
     if (!group.isMember(req.userId)) {
       return res.status(403).json({
         success: false,
         error: 'Vous n\'êtes pas membre de ce groupe'
       });
     }
+    
+    // Populate après la vérification
+    await group.populate('members', 'username');
+    await group.populate('creator', 'username');
     
     res.json({
       success: true,
@@ -127,7 +143,7 @@ router.put('/:id', authMiddleware, async (req, res) => {
     }
     
     // Seul le créateur peut modifier le groupe
-    if (group.creator.toString() !== req.userId) {
+    if (group.creator.toString() !== req.userId.toString()) {
       return res.status(403).json({
         success: false,
         error: 'Seul le créateur peut modifier le groupe'
@@ -186,13 +202,29 @@ router.post('/:id/members', authMiddleware, async (req, res) => {
     }
     
     // Ajouter les nouveaux membres
+    const newMembers = [];
     userIds.forEach(userId => {
-      group.addMember(userId);
+      if (!group.isMember(userId)) {
+        group.addMember(userId);
+        newMembers.push(userId);
+      }
     });
     
     await group.save();
     await group.populate('members', 'username');
     await group.populate('creator', 'username');
+    
+    // Émettre un événement socket pour notifier les nouveaux membres
+    if (newMembers.length > 0) {
+      const io = require('../socket').getIO();
+      newMembers.forEach(memberId => {
+        io.emit('group:member:added', {
+          groupId: group._id.toString(),
+          group: group.toJSON(),
+          userId: memberId
+        });
+      });
+    }
     
     res.json({
       success: true,
@@ -221,9 +253,10 @@ router.delete('/:id/members/:userId', authMiddleware, async (req, res) => {
     }
     
     const userToRemove = req.params.userId;
+    const currentUserId = req.userId.toString();
     
     // Soit le créateur retire quelqu'un, soit l'utilisateur se retire lui-même
-    if (group.creator.toString() !== req.userId && userToRemove !== req.userId) {
+    if (group.creator.toString() !== currentUserId && userToRemove !== currentUserId) {
       return res.status(403).json({
         success: false,
         error: 'Non autorisé'
@@ -242,6 +275,14 @@ router.delete('/:id/members/:userId', authMiddleware, async (req, res) => {
     await group.save();
     await group.populate('members', 'username');
     await group.populate('creator', 'username');
+    
+    // Émettre un événement socket pour notifier que l'utilisateur a quitté
+    const io = require('../socket').getIO();
+    io.emit('group:member:removed', {
+      groupId: group._id.toString(),
+      userId: userToRemove,
+      group: group.toJSON()
+    });
     
     res.json({
       success: true,
@@ -270,14 +311,26 @@ router.delete('/:id', authMiddleware, async (req, res) => {
     }
     
     // Seul le créateur peut supprimer le groupe
-    if (group.creator.toString() !== req.userId) {
+    if (group.creator.toString() !== req.userId.toString()) {
       return res.status(403).json({
         success: false,
         error: 'Seul le créateur peut supprimer le groupe'
       });
     }
     
+    const groupId = group._id.toString();
+    const members = [...group.members];
+    
     await Group.findByIdAndDelete(req.params.id);
+    
+    // Émettre un événement socket pour notifier tous les membres
+    const io = require('../socket').getIO();
+    members.forEach(memberId => {
+      io.emit('group:deleted', {
+        groupId: groupId,
+        userId: memberId.toString()
+      });
+    });
     
     res.json({
       success: true,
