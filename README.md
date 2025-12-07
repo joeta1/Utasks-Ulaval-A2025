@@ -1,4 +1,4 @@
-# UTasks - Manage Your Tasks as You Want! 📋
+# UTasks - Manage Your Tasks as You Want! 📋 (Still in development!)
 
 UTasks is a Trello-like web application built with **Vue 3**, **TypeScript**, and **TailwindCSS** for the frontend, and **Node.js**, **Express**, and **MongoDB** for the backend.  
 It allows users to create an account, log in, and manage their tasks by creating, editing, and organizing boards, lists, and cards through a clean and interactive interface.
@@ -16,10 +16,6 @@ It allows users to create an account, log in, and manage their tasks by creating
 - ✅ **Real-time chat** with WebSocket (Socket.io)
   - General chat room for all users
   - Private messaging between users
-  - Online users list
-  - Typing indicators
-  - Message history persistence
-
 ## 🛠️ Technologies
 
 ### Frontend
@@ -54,8 +50,8 @@ utasks/
 ├── backend/              # Backend API (Node.js/Express)
 │   ├── src/
 │   │   ├── middleware/   # Authentication middleware (JWT)
-│   │   ├── models/       # MongoDB models (User, Board, List, Card, Message)
-│   │   ├── routes/       # API routes (auth, boards, lists, cards, chat)
+│   │   ├── models/       # MongoDB models (User, Board, List.)
+│   │   ├── routes/       # API routes (auth, boards, cards...)
 │   │   ├── socket.js     # Socket.io configuration
 │   │   └── server.js     # Entry point
 │   └── package.json
@@ -80,18 +76,30 @@ utasks/
    npm install
    ```
 
-3. **Create `.env` file** (copy from `.env.example`):
-   ```bash
-   cp .env.example .env
-   ```
-
-4. **Configure environment variables** in `.env`:
+3. **Create `.env` file** (copy from `.env.example` (in **backend folder**)):
+   
+4. **Configure environment variables (it should be already there)** in `.env`:
    ```env
-   MONGODB_URI=mongodb+srv://username:password@cluster.mongodb.net/utasks
-   JWT_SECRET=your-secret-key
+   # MongoDB Connection. You can use this or your own MongoDB URI.
+
+   MONGODB_URI=mongodb://localhost:27017/utasks
+
+   # JWT Secret (change this in production!)
+   JWT_SECRET=your-super-secret-jwt-key-change-in-production
+
+   # Server Port
    PORT=3000
+
+   # Frontend URL (for CORS)
    FRONTEND_URL=http://localhost:5173
+
    ```
+   
+   **⚠️ CRITICAL**: Now, you just have to generate a secure JWT_SECRET:
+   ```bash
+   node -e "console.log(require('crypto').randomBytes(64).toString('hex'))"
+   ```
+   Copy the generated string and use it as your JWT_SECRET value.
 
 5. **Start the backend server**:
    ```bash
@@ -110,12 +118,9 @@ utasks/
    npm install
    ```
 
-3. **Create `.env` file** (copy from `.env.example`):
-   ```bash
-   cp .env.example .env
-   ```
-
-4. **Configure environment variables** in `.env`:
+3. **Create `.env` file** (copy from `.env.example` (in **frontend folder**)):
+  
+4. **Configure environment variables (it should be already there)** in `.env`:
    ```env
    VITE_API_URL=http://localhost:3000
    ```
@@ -185,26 +190,6 @@ utasks/
 | GET | `/api/chat/users/online` | Get list of online users |
 | GET | `/api/chat/conversations` | Get recent conversations |
 
-### WebSocket Events (Socket.io)
-| Event | Direction | Description |
-|-------|-----------|-------------|
-| `message:send` | Client → Server | Send a message to a room |
-| `message:received` | Server → Client | Receive a new message |
-| `message:private` | Client → Server | Send a private message |
-| `message:private:received` | Server → Client | Receive a private message |
-| `users:online` | Server → Client | List of online users |
-| `user:connected` | Server → Client | User connected notification |
-| `user:disconnected` | Server → Client | User disconnected notification |
-| `typing:start` / `typing:stop` | Bidirectional | Typing indicators |
-
-## 🔐 Authentication
-
-The API uses JWT (JSON Web Tokens) for authentication. Include the token in the `Authorization` header:
-
-```
-Authorization: Bearer <your-token>
-```
-
 ## 📜 Available Scripts
 
 ### Frontend (from `frontend/` folder)
@@ -223,13 +208,19 @@ Authorization: Bearer <your-token>
 ## 🌐 Live Demo
 Test the application online: **[https://ulaval-glo3102-utasks-a2025-team-37.netlify.app/](https://ulaval-glo3102-utasks-a2025-team-37.netlify.app/)**
 
+The Api runs at **https://utasks-a2025-utasks-a2025-team-37.onrender.com**
+
+**WARNING**: The Api actually goes down after 15 minutes of inactivity, So when you try to log in/out (call a request basically) after a while or for the first time, make sure to refresh the page
+
 Access it from any device (phone, tablet, desktop, laptop)!
 ## 📖 How to Use
 
 ### First Time Setup
-1. Open `http://localhost:5173` in your browser
+1. Launch the app locally or via the link provided previously
 2. Create an account with username and password
 3. Start creating boards, lists, and cards!
+
+**NOTE:** As i said earlier, you may have to refresh the page and resume your requests because of renderer auto sleep-down.
 
 ### Features
 - **Boards**: Create multiple boards to organize different projects
@@ -237,14 +228,12 @@ Access it from any device (phone, tablet, desktop, laptop)!
 - **Cards**: Add cards to lists with title, description, due date, and priority
 - **Drag & Drop**: Move cards between lists or reorder lists
 - **Priority**: Set card priority (High 🔴, Medium 🟡, Low 🟢)
-- **Dark Mode**: Toggle between light and dark themes
 - **Real-time Chat**: Click the chat icon 💬 in the bottom-right corner to:
   - Chat with all online users in the general room
   - Start private conversations with specific users
-  - See who's online and who's typing
 
 ## 👥 Team
-- GLO3102 - Team 37
+- Jordan Etaba Bikoun
 
 ## 📄 License
-This project is for educational purposes as part of the GLO3102 course at Université Laval.
+This project is for educational purposes as part of the GLO3102 course at Université Laval and is still in development.
