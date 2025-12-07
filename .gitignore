@@ -1,10 +1,15 @@
 .DS_Store
 node_modules
-/dist
+
+# Build outputs
+dist/
+frontend/dist/
+backend/dist/
 
 # local env files
 .env.local
 .env.*.local
+frontend/.env
 
 # Log files
 npm-debug.log*
@@ -19,3 +24,5 @@ yarn-error.log*
 *.njsproj
 *.sln
 *.sw?
+frontend/.env
+frontend/.env

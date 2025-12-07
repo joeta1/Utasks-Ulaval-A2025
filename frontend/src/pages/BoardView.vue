@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, computed, watch } from 'vue'
+import authStore from '../stores/auth'
 import { useRoute, useRouter } from 'vue-router'
 import BoardHeader from '../components/BoardHeader.vue'
 import NewListForm from '../components/NewListForm.vue'
@@ -7,15 +8,18 @@ import CardItem from '../components/CardItem.vue'
 import ListColumn from '../components/ListColumn.vue'
 
 // API base and routing
-const apiBase = 'https://utasks-026af75f15a3.herokuapp.com'
+const apiBase = import.meta.env.VITE_API_URL || 'http://localhost:3000'
 const route = useRoute()
 const router = useRouter()
 
 // Board ID from route
 const boardId = route.params.id as string
 // Auth check
-const userId = localStorage.getItem('userId')
-if (!userId) router.push('/')
+const userId = computed(() => authStore.currentUser.value?.id)
+if (!userId.value) router.push('/')
+watch(userId, (val) => {
+  if (!val) router.push('/')
+})
 
 // State
 const boardName = ref('')
